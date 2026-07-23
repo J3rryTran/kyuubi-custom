@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+EXTRA_RESOURCE_DIR="$1"
+mkdir -p "$EXTRA_RESOURCE_DIR"
+BUILD_INFO="$EXTRA_RESOURCE_DIR"/kyuubi-version-info.properties
+
+echo_build_properties() {
+  echo kyuubi_version="$2"
+  echo kyuubi_java_version="$3"
+  echo kyuubi_scala_version="$4"
+  echo kyuubi_spark_version="$5"
+  echo kyuubi_hive_version="$6"
+  echo kyuubi_hadoop_version="$7"
+  echo kyuubi_flink_version="$8"
+  echo kyuubi_trino_version="$9"
+  # if for some reason the shell doesn't have $USER defined
+  # (e.g., ssh'd in to execute a command)
+  # let's get the effective username and use that
+  echo user="${USER:-$(id -nu)}"
+  echo revision=$(git rev-parse HEAD)
+  echo revision_time=$(git show -s --format=%ci HEAD)
+  echo branch=$(git rev-parse --abbrev-ref HEAD)
+  echo date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  echo url=$(git config --get remote.origin.url)
+}
+
+echo_build_properties "$@" > "$BUILD_INFO"

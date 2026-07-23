@@ -1,0 +1,1 @@
+struct<promotions:decimal,total:decimal,((CAST(promotions AS DECIMAL(15,4)) / CAST(total AS DECIMAL(15,4))) * 100):decimal>

@@ -1,0 +1,114 @@
+[ {
+  "classname" : "org.apache.spark.sql.execution.command.CreateFunctionCommand",
+  "functionDescs" : [ {
+    "fieldName" : "identifier",
+    "fieldExtractor" : "FunctionIdentifierFunctionExtractor",
+    "databaseDesc" : null,
+    "functionTypeDesc" : {
+      "fieldName" : "isTemp",
+      "fieldExtractor" : "TempMarkerFunctionTypeExtractor",
+      "skipTypes" : [ "TEMP" ],
+      "comment" : ""
+    },
+    "isInput" : false,
+    "comment" : ""
+  }, {
+    "fieldName" : "functionName",
+    "fieldExtractor" : "StringFunctionExtractor",
+    "databaseDesc" : {
+      "fieldName" : "databaseName",
+      "fieldExtractor" : "StringOptionDatabaseExtractor",
+      "catalogDesc" : null,
+      "isInput" : false,
+      "comment" : ""
+    },
+    "functionTypeDesc" : {
+      "fieldName" : "isTemp",
+      "fieldExtractor" : "TempMarkerFunctionTypeExtractor",
+      "skipTypes" : [ "TEMP" ],
+      "comment" : ""
+    },
+    "isInput" : false,
+    "comment" : ""
+  } ],
+  "opType" : "CREATEFUNCTION"
+}, {
+  "classname" : "org.apache.spark.sql.execution.command.DescribeFunctionCommand",
+  "functionDescs" : [ {
+    "fieldName" : "info",
+    "fieldExtractor" : "ExpressionInfoFunctionExtractor",
+    "databaseDesc" : null,
+    "functionTypeDesc" : {
+      "fieldName" : "info",
+      "fieldExtractor" : "ExpressionInfoFunctionTypeExtractor",
+      "skipTypes" : [ "TEMP", "SYSTEM" ],
+      "comment" : ""
+    },
+    "isInput" : true,
+    "comment" : ""
+  }, {
+    "fieldName" : "functionName",
+    "fieldExtractor" : "FunctionIdentifierFunctionExtractor",
+    "databaseDesc" : null,
+    "functionTypeDesc" : {
+      "fieldName" : "functionName",
+      "fieldExtractor" : "FunctionIdentifierFunctionTypeExtractor",
+      "skipTypes" : [ "TEMP", "SYSTEM" ],
+      "comment" : ""
+    },
+    "isInput" : true,
+    "comment" : ""
+  } ],
+  "opType" : "DESCFUNCTION"
+}, {
+  "classname" : "org.apache.spark.sql.execution.command.DropFunctionCommand",
+  "functionDescs" : [ {
+    "fieldName" : "identifier",
+    "fieldExtractor" : "FunctionIdentifierFunctionExtractor",
+    "databaseDesc" : null,
+    "functionTypeDesc" : {
+      "fieldName" : "isTemp",
+      "fieldExtractor" : "TempMarkerFunctionTypeExtractor",
+      "skipTypes" : [ "TEMP" ],
+      "comment" : ""
+    },
+    "isInput" : false,
+    "comment" : ""
+  }, {
+    "fieldName" : "functionName",
+    "fieldExtractor" : "StringFunctionExtractor",
+    "databaseDesc" : {
+      "fieldName" : "databaseName",
+      "fieldExtractor" : "StringOptionDatabaseExtractor",
+      "catalogDesc" : null,
+      "isInput" : false,
+      "comment" : ""
+    },
+    "functionTypeDesc" : {
+      "fieldName" : "isTemp",
+      "fieldExtractor" : "TempMarkerFunctionTypeExtractor",
+      "skipTypes" : [ "TEMP" ],
+      "comment" : ""
+    },
+    "isInput" : false,
+    "comment" : ""
+  } ],
+  "opType" : "DROPFUNCTION"
+}, {
+  "classname" : "org.apache.spark.sql.execution.command.RefreshFunctionCommand",
+  "functionDescs" : [ {
+    "fieldName" : "functionName",
+    "fieldExtractor" : "StringFunctionExtractor",
+    "databaseDesc" : {
+      "fieldName" : "databaseName",
+      "fieldExtractor" : "StringOptionDatabaseExtractor",
+      "catalogDesc" : null,
+      "isInput" : false,
+      "comment" : ""
+    },
+    "functionTypeDesc" : null,
+    "isInput" : false,
+    "comment" : ""
+  } ],
+  "opType" : "RELOADFUNCTION"
+} ]

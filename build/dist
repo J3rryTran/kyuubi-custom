@@ -1,0 +1,422 @@
+#!/usr/bin/env bash
+
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+#
+# Script to create a binary distribution for easy deploys of Kyuubi.
+# The distribution directory defaults to dist/ but can be overridden below.
+# The distribution contains fat (assembly) jars that include the Scala library,
+# so it is completely self contained.
+# It does not contain source or *.class files.
+
+set -o pipefail
+set -e
+set -x
+
+KYUUBI_HOME="$(cd "`dirname "$0"`/.."; pwd)"
+DISTDIR="$KYUUBI_HOME/dist"
+MAKE_TGZ=false
+ENABLE_WEBUI=false
+FLINK_PROVIDED=false
+SPARK_PROVIDED=false
+HIVE_PROVIDED=false
+NAME=none
+MVN="$KYUUBI_HOME/build/mvn"
+
+function usage {
+  set +x
+  echo "./build/dist - Tool for making binary distributions of Kyuubi"
+  echo ""
+  echo "Usage:"
+  echo "+----------------------------------------------------------------------------------------------+"
+  echo "| ./build/dist [--name <custom_name>] [--tgz] [--web-ui] [--flink-provided] [--hive-provided]  |"
+  echo "|              [--spark-provided] [--mvn <maven_executable>] <maven build options>             |"
+  echo "+----------------------------------------------------------------------------------------------+"
+  echo "name:           -  custom binary name, using project version if undefined"
+  echo "tgz:            -  whether to make a whole bundled package"
+  echo "web-ui:         -  whether to include web ui"
+  echo "flink-provided: -  whether to make a package without Flink binary"
+  echo "hive-provided:  -  whether to make a package without Hive binary"
+  echo "spark-provided: -  whether to make a package without Spark binary"
+  echo "mvn:            -  external maven executable location"
+  echo ""
+}
+
+function exit_with_usage {
+  usage
+  exit 1
+}
+
+
+# Parse arguments
+while (( "$#" )); do
+  case $1 in
+    --tgz)
+      MAKE_TGZ=true
+      ;;
+    --web-ui)
+      ENABLE_WEBUI=true
+      ;;
+    --flink-provided)
+      FLINK_PROVIDED=true
+      ;;
+    --spark-provided)
+      SPARK_PROVIDED=true
+      ;;
+    --hive-provided)
+      HIVE_PROVIDED=true
+      ;;
+    --mvn)
+      MVN="$2"
+      shift
+      ;;
+    --name)
+      NAME="$2"
+      shift
+      ;;
+    --help)
+      exit_with_usage
+      ;;
+    --*)
+      echo "Error: $1 is not supported"
+      exit_with_usage
+      ;;
+    -*)
+      break
+      ;;
+    *)
+      echo "Error: $1 is not supported"
+      exit_with_usage
+      ;;
+  esac
+  shift
+done
+
+# Setup java
+if [[ -z "$JAVA_HOME" ]]; then
+  # Fallback on JAVA_HOME from rpm, if found
+  # shellcheck disable=SC2046
+  if [ $(command -v rpm) ]; then
+    RPM_JAVA_HOME="$(rpm -E %java_home 2>/dev/null)"
+    if [ "$RPM_JAVA_HOME" != "%java_home" ]; then
+      JAVA_HOME="$RPM_JAVA_HOME"
+      echo "No JAVA_HOME set, proceeding with '$JAVA_HOME' learned from rpm"
+    fi
+  fi
+
+  if [ -z "$JAVA_HOME" ]; then
+    # shellcheck disable=SC2006
+    if [[ `command -v java` ]]; then
+      # If java is in /usr/bin/java, we want /usr
+      # shellcheck disable=SC2046
+      JAVA_HOME="$(dirname $(dirname $(which java)))"
+    fi
+  fi
+fi
+
+if [[ -z "$JAVA_HOME" ]]; then
+  echo "Error: JAVA_HOME is not set, cannot proceed."
+  # shellcheck disable=SC2242
+  exit -1
+fi
+
+export JAVA_HOME="$JAVA_HOME"
+echo "JAVA_HOME is set to $JAVA_HOME"
+
+if [[ $(command -v git) ]]; then
+    GITREV=$(git rev-parse --short HEAD 2>/dev/null || :)
+    if [[ ! -z "$GITREV" ]]; then
+        GITREVSTRING="(git revision $GITREV)"
+    fi
+    unset GITREV
+fi
+
+
+if [ ! "$(command -v "$MVN")" ] ; then
+    echo -e "Could not locate Maven command: '$MVN'."
+    echo -e "Specify the Maven command with the --mvn flag"
+    # shellcheck disable=SC2242
+    exit -1;
+fi
+
+echo "MVN is set to $MVN"
+
+# shellcheck disable=SC2068
+VERSION=$("$MVN" help:evaluate -Dexpression=project.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+# shellcheck disable=SC2068
+JAVA_VERSION=$("$MVN" help:evaluate -Dexpression=java.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+# shellcheck disable=SC2068
+SCALA_VERSION=$("$MVN" help:evaluate -Dexpression=scala.binary.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+# shellcheck disable=SC2068
+FLINK_VERSION=$("$MVN" help:evaluate -Dexpression=flink.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+# shellcheck disable=SC2068
+SPARK_VERSION=$("$MVN" help:evaluate -Dexpression=spark.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+# shellcheck disable=SC2068
+HADOOP_VERSION=$("$MVN" help:evaluate -Dexpression=hadoop.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+# shellcheck disable=SC2068
+HIVE_VERSION=$("$MVN" help:evaluate -Dexpression=hive.version $@ 2>/dev/null\
+    | grep -v "INFO"\
+    | grep -v "WARNING"\
+    | tail -n 1)
+
+echo "Building Kyuubi package of version $VERSION against Flink $FLINK_VERSION, Spark $SPARK_VERSION"
+
+SUFFIX="-$NAME"
+if [[ "$NAME" == "none" ]]; then
+  if [[ "$SPARK_PROVIDED" == "true" ]]; then
+    SUFFIX=""
+  else
+    SUFFIX="-spark-${SPARK_VERSION:0:3}"
+  fi
+fi
+
+if [[ "$MAKE_TGZ" == "true" ]]; then
+  echo "Making apache-kyuubi-$VERSION-bin$SUFFIX.tgz"
+else
+  echo "Making distribution for Kyuubi $VERSION in '$DISTDIR'..."
+fi
+
+MVN_DIST_OPT="-DskipTests -Dmaven.source.skip"
+
+if [[ "$ENABLE_WEBUI" == "true" ]]; then
+  MVN_DIST_OPT="$MVN_DIST_OPT -Pweb-ui"
+fi
+
+if [[ "$SPARK_PROVIDED" == "true" ]]; then
+  MVN_DIST_OPT="$MVN_DIST_OPT -Pspark-provided"
+fi
+
+if [[ "$FLINK_PROVIDED" == "true" ]]; then
+  MVN_DIST_OPT="$MVN_DIST_OPT -Pflink-provided"
+fi
+
+if [[ "$HIVE_PROVIDED" == "true" ]]; then
+  MVN_DIST_OPT="$MVN_DIST_OPT -Phive-provided"
+fi
+
+# clean up all versions of Spark extension, to avoid collecting outdated artifacts
+SPARK_EXTENSION_VERSIONS=('3-2' '3-3' '3-4' '3-5')
+# shellcheck disable=SC2068
+for SPARK_EXTENSION_VERSION in ${SPARK_EXTENSION_VERSIONS[@]}; do
+  rm -f "$KYUUBI_HOME/extensions/spark/kyuubi-extension-spark-$SPARK_EXTENSION_VERSION/target/kyuubi-extension-spark-${SPARK_EXTENSION_VERSION}_${SCALA_VERSION}-${VERSION}.jar"
+done
+
+export MAVEN_OPTS="${MAVEN_OPTS:--Xmx2g}"
+
+BUILD_COMMAND=("$MVN" clean install $MVN_DIST_OPT $@)
+
+echo -e "\nBuilding with..."
+# shellcheck disable=SC2145
+echo -e "\$ ${BUILD_COMMAND[@]}\n"
+"${BUILD_COMMAND[@]}"
+
+FILTERED_ARGS=()
+# shellcheck disable=SC2045
+for arg in "$@"; do
+    if [[ $arg == *scala-2.12* ]]; then
+        FILTERED_ARGS+=("${arg//scala-2.12/scala-2.13}")
+    elif [[ $arg == *scala-2.13* ]]; then
+        FILTERED_ARGS+=("${arg//scala-2.13/scala-2.12}")
+    else
+        FILTERED_ARGS+=("$arg")
+    fi
+done
+
+# shellcheck disable=SC2050
+if [ "$SCALA_VERSION" = "2.12" ]; then
+  EXTRA_SPARK_ENGINE_BUILD_COMMAND=("$MVN" install $MVN_DIST_OPT ${FILTERED_ARGS[@]} -Pscala-2.13 -pl :kyuubi-spark-sql-engine_2.13 -am)
+else
+  EXTRA_SPARK_ENGINE_BUILD_COMMAND=("$MVN" install $MVN_DIST_OPT ${FILTERED_ARGS[@]} -pl :kyuubi-spark-sql-engine_2.12 -am)
+fi
+
+# shellcheck disable=SC2145
+echo -e "\$ ${EXTRA_SPARK_ENGINE_BUILD_COMMAND[@]}\n"
+
+"${EXTRA_SPARK_ENGINE_BUILD_COMMAND[@]}"
+
+# Make directories
+rm -rf "$DISTDIR"
+mkdir -p "$DISTDIR/pid"
+mkdir -p "$DISTDIR/logs"
+mkdir -p "$DISTDIR/work"
+mkdir -p "$DISTDIR/jars"
+mkdir -p "$DISTDIR/db-scripts"
+mkdir -p "$DISTDIR/beeline-jars"
+mkdir -p "$DISTDIR/web-ui"
+mkdir -p "$DISTDIR/externals/engines/flink"
+mkdir -p "$DISTDIR/externals/engines/spark"
+mkdir -p "$DISTDIR/externals/engines/trino"
+mkdir -p "$DISTDIR/externals/engines/hive"
+mkdir -p "$DISTDIR/externals/engines/jdbc"
+mkdir -p "$DISTDIR/externals/engines/chat"
+echo "Kyuubi $VERSION $GITREVSTRING built for" > "$DISTDIR/RELEASE"
+echo "Java $JAVA_VERSION" >> "$DISTDIR/RELEASE"
+echo "Scala $SCALA_VERSION" >> "$DISTDIR/RELEASE"
+echo "Flink $FLINK_VERSION" >> "$DISTDIR/RELEASE"
+echo "Spark $SPARK_VERSION" >> "$DISTDIR/RELEASE"
+echo "Kyuubi Hadoop $HADOOP_VERSION" >> "$DISTDIR/RELEASE"
+echo "Hive $HIVE_VERSION" >> "$DISTDIR/RELEASE"
+# shellcheck disable=SC2145
+echo "Build flags: $@" >> "$DISTDIR/RELEASE"
+
+# Copy kyuubi server jars
+cp -r "$KYUUBI_HOME"/kyuubi-assembly/target/scala-$SCALA_VERSION/jars/*.jar "$DISTDIR/jars/"
+
+# Copy kyuubi database scripts
+cp -r "$KYUUBI_HOME"/kyuubi-server/src/main/resources/sql/* "$DISTDIR/db-scripts/"
+
+# Copy kyuubi beeline jars
+cp "$KYUUBI_HOME"/kyuubi-hive-beeline/target/*.jar "$DISTDIR/beeline-jars/"
+
+# Share the jars w/ server to reduce binary size
+# shellcheck disable=SC2045
+for jar in $(ls "$DISTDIR/jars/"); do
+  if [[ -f "$DISTDIR/beeline-jars/$jar" ]]; then
+    (cd $DISTDIR/beeline-jars; ln -snf "../jars/$jar" "$DISTDIR/beeline-jars/$jar")
+  fi
+done
+
+# Copy flink engines
+cp "$KYUUBI_HOME/externals/kyuubi-flink-sql-engine/target/kyuubi-flink-sql-engine_${SCALA_VERSION}-${VERSION}.jar" "$DISTDIR/externals/engines/flink/"
+
+# Copy spark engines
+# shellcheck disable=SC2045
+for scala_version in 2.12 2.13; do
+  cp "$KYUUBI_HOME/externals/kyuubi-spark-sql-engine/target/kyuubi-spark-sql-engine_${scala_version}-${VERSION}.jar" "$DISTDIR/externals/engines/spark/"
+done
+
+# Copy trino engines
+cp "$KYUUBI_HOME/externals/kyuubi-trino-engine/target/kyuubi-trino-engine_${SCALA_VERSION}-${VERSION}.jar" "$DISTDIR/externals/engines/trino/"
+cp -r "$KYUUBI_HOME"/externals/kyuubi-trino-engine/target/scala-$SCALA_VERSION/jars/*.jar "$DISTDIR/externals/engines/trino/"
+
+# Share the jars w/ server to reduce binary size
+# shellcheck disable=SC2045
+for jar in $(ls "$DISTDIR/jars/"); do
+  if [[ -f "$DISTDIR/externals/engines/trino/$jar" ]]; then
+    (cd $DISTDIR/externals/engines/trino; ln -snf "../../../jars/$jar" "$DISTDIR/externals/engines/trino/$jar")
+  fi
+done
+
+# Copy hive engines
+cp "$KYUUBI_HOME/externals/kyuubi-hive-sql-engine/target/kyuubi-hive-sql-engine_${SCALA_VERSION}-${VERSION}.jar" "$DISTDIR/externals/engines/hive/"
+
+# Copy jdbc engines
+cp "$KYUUBI_HOME/externals/kyuubi-jdbc-engine/target/kyuubi-jdbc-engine_${SCALA_VERSION}-${VERSION}.jar" "$DISTDIR/externals/engines/jdbc/"
+cp -r "$KYUUBI_HOME"/externals/kyuubi-jdbc-engine/target/scala-$SCALA_VERSION/jars/*.jar "$DISTDIR/externals/engines/jdbc/"
+
+# Share the jars w/ server to reduce binary size
+# shellcheck disable=SC2045
+for jar in $(ls "$DISTDIR/jars/"); do
+  if [[ -f "$DISTDIR/externals/engines/jdbc/$jar" ]]; then
+    (cd $DISTDIR/externals/engines/jdbc; ln -snf "../../../jars/$jar" "$DISTDIR/externals/engines/jdbc/$jar")
+  fi
+done
+
+# Copy chat engines
+cp "$KYUUBI_HOME/externals/kyuubi-chat-engine/target/kyuubi-chat-engine_${SCALA_VERSION}-${VERSION}.jar" "$DISTDIR/externals/engines/chat/"
+cp -r "$KYUUBI_HOME"/externals/kyuubi-chat-engine/target/scala-$SCALA_VERSION/jars/*.jar "$DISTDIR/externals/engines/chat/"
+
+# Share the jars w/ server to reduce binary size
+# shellcheck disable=SC2045
+for jar in $(ls "$DISTDIR/jars/"); do
+  if [[ -f "$DISTDIR/externals/engines/chat/$jar" ]]; then
+    (cd $DISTDIR/externals/engines/chat; ln -snf "../../../jars/$jar" "$DISTDIR/externals/engines/chat/$jar")
+  fi
+done
+
+# Copy Kyuubi Spark extension
+# shellcheck disable=SC2068
+for SPARK_EXTENSION_VERSION in ${SPARK_EXTENSION_VERSIONS[@]}; do
+  if [[ -f $"$KYUUBI_HOME/extensions/spark/kyuubi-extension-spark-$SPARK_EXTENSION_VERSION/target/kyuubi-extension-spark-${SPARK_EXTENSION_VERSION}_${SCALA_VERSION}-${VERSION}.jar" ]]; then
+    mkdir -p "$DISTDIR/extension"
+    cp "$KYUUBI_HOME/extensions/spark/kyuubi-extension-spark-$SPARK_EXTENSION_VERSION/target/kyuubi-extension-spark-${SPARK_EXTENSION_VERSION}_${SCALA_VERSION}-${VERSION}.jar" "$DISTDIR/extension/"
+  fi
+done
+
+if [[ "$ENABLE_WEBUI" == "true" ]]; then
+  # Copy web ui dist
+  cp -r "$KYUUBI_HOME/kyuubi-server/web-ui/dist" "$DISTDIR/web-ui/"
+fi
+
+if [[ "$FLINK_PROVIDED" != "true" ]]; then
+  # Copy flink binary dist
+  FLINK_BUILTIN="$(find "$KYUUBI_HOME/externals/kyuubi-download/target" -name 'flink-*' -type d)"
+  cp -r "$FLINK_BUILTIN" "$DISTDIR/externals/"
+fi
+
+if [[ "$SPARK_PROVIDED" != "true" ]]; then
+  # Copy spark binary dist
+  SPARK_BUILTIN="$(find "$KYUUBI_HOME/externals/kyuubi-download/target" -name 'spark-*' -type d)"
+  cp -r "$SPARK_BUILTIN" "$DISTDIR/externals/"
+fi
+
+if [[ "$HIVE_PROVIDED" != "true" ]]; then
+  # Copy hive binary dist
+  HIVE_BUILTIN="$(find "$KYUUBI_HOME/externals/kyuubi-download/target" -name 'apache-hive-*' -type d)"
+  cp -r "$HIVE_BUILTIN" "$DISTDIR/externals/"
+fi
+
+# Copy license files
+if [[ -f $"$KYUUBI_HOME/LICENSE-binary" ]]; then
+  cp "$KYUUBI_HOME/LICENSE-binary" "$DISTDIR/LICENSE"
+  cp -r "$KYUUBI_HOME/licenses-binary" "$DISTDIR/licenses"
+  cp "$KYUUBI_HOME/NOTICE-binary" "$DISTDIR/NOTICE"
+fi
+
+cp -r "$KYUUBI_HOME/bin" "$DISTDIR"
+cp -r "$KYUUBI_HOME/conf" "$DISTDIR"
+cp -r "$KYUUBI_HOME/docker" "$DISTDIR"
+cp -r "$KYUUBI_HOME/charts" "$DISTDIR"
+
+if [[ "$MAKE_TGZ" == "true" ]]; then
+  TARDIR_NAME="apache-kyuubi-$VERSION-bin$SUFFIX"
+  TARDIR="$KYUUBI_HOME/$TARDIR_NAME"
+  rm -rf "$TARDIR"
+  cp -R "$DISTDIR" "$TARDIR"
+  TAR="tar"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    TAR="tar --no-mac-metadata --no-xattrs --no-fflags"
+  fi
+  $TAR -czf "$TARDIR_NAME.tgz" -C "$KYUUBI_HOME" "$TARDIR_NAME"
+  rm -rf "$TARDIR"
+  echo "The Kyuubi tarball $TARDIR_NAME.tgz is successfully generated in $KYUUBI_HOME."
+fi

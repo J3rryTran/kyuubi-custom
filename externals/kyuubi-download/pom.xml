@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Licensed to the Apache Software Foundation (ASF) under one or more
+  ~ contributor license agreements.  See the NOTICE file distributed with
+  ~ this work for additional information regarding copyright ownership.
+  ~ The ASF licenses this file to You under the Apache License, Version 2.0
+  ~ (the "License"); you may not use this file except in compliance with
+  ~ the License.  You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.apache.kyuubi</groupId>
+        <artifactId>kyuubi-parent</artifactId>
+        <version>1.10.3</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>kyuubi-download</artifactId>
+    <packaging>pom</packaging>
+    <name>Kyuubi Project Download Externals</name>
+    <url>https://kyuubi.apache.org/</url>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.googlecode.maven-download-plugin</groupId>
+                <artifactId>download-maven-plugin</artifactId>
+                <configuration>
+                    <cacheDirectory>${maven.plugin.download.cache.path}</cacheDirectory>
+                    <outputDirectory>${project.build.directory}</outputDirectory>
+                    <readTimeOut>60000</readTimeOut>
+                    <retries>3</retries>
+                    <unpack>true</unpack>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>download-spark-release</id>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <phase>compile</phase>
+                        <configuration>
+                            <skip>${spark.archive.download.skip}</skip>
+                            <url>${spark.archive.mirror}/${spark.archive.name}${spark.archive.query}</url>
+                            <outputFileName>${spark.archive.name}</outputFileName>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>download-flink-release</id>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <phase>compile</phase>
+                        <configuration>
+                            <skip>${flink.archive.download.skip}</skip>
+                            <url>${flink.archive.mirror}/${flink.archive.name}${flink.archive.query}</url>
+                            <outputFileName>${flink.archive.name}</outputFileName>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>download-hive-release</id>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <phase>compile</phase>
+                        <configuration>
+                            <skip>${hive.archive.download.skip}</skip>
+                            <url>${hive.archive.mirror}/${hive.archive.name}${hive.archive.query}</url>
+                            <outputFileName>${hive.archive.name}</outputFileName>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-remote-resources-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

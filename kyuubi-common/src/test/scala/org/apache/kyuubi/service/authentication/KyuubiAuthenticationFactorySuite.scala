@@ -1,0 +1,88 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.kyuubi.service.authentication
+
+import java.security.Security
+import javax.security.auth.login.LoginException
+
+import org.apache.kyuubi.{KyuubiFunSuite, KyuubiSQLException}
+import org.apache.kyuubi.config.KyuubiConf
+import org.apache.kyuubi.service.authentication.PlainSASLServer.SaslPlainProvider
+import org.apache.kyuubi.shaded.thrift.transport.TSaslServerTransport
+import org.apache.kyuubi.util.AssertionUtils._
+import org.apache.kyuubi.util.KyuubiHadoopUtils
+
+class KyuubiAuthenticationFactorySuite extends KyuubiFunSuite {
+
+  test("verify proxy access") {
+    val kyuubiConf = KyuubiConf()
+    val hadoopConf = KyuubiHadoopUtils.newHadoopConf(kyuubiConf)
+
+    val e1 = intercept[KyuubiSQLException] {
+      AuthUtils.verifyProxyAccess("kent", "yao", "localhost", hadoopConf)
+    }
+    assert(e1.getMessage === "Failed to validate proxy privilege of kent for yao")
+
+    kyuubiConf.set("hadoop.proxyuser.kent.groups", "*")
+    kyuubiConf.set("hadoop.proxyuser.kent.hosts", "*")
+    val hadoopConf2 = KyuubiHadoopUtils.newHadoopConf(kyuubiConf)
+    AuthUtils.verifyProxyAccess("kent", "yao", "localhost", hadoopConf2)
+  }
+
+  test("AuthType NONE") {
+    val kyuubiConf = KyuubiConf()
+    val auth = new KyuubiAuthenticationFactory(kyuubiConf)
+    auth.getTTransportFactory
+    assert(Security.getProviders.exists(_.isInstanceOf[SaslPlainProvider]))
+
+    assert(auth.getIpAddress.isEmpty)
+    assert(auth.getRemoteUser.isEmpty)
+  }
+
+  test("AuthType Other") {
+    val conf = KyuubiConf().set(KyuubiConf.AUTHENTICATION_METHOD, Seq("INVALID"))
+    interceptEquals[IllegalArgumentException] { new KyuubiAuthenticationFactory(conf) }(
+      "The value of kyuubi.authentication should be one of" +
+        " NOSASL, NONE, LDAP, JDBC, KERBEROS, CUSTOM, but was INVALID")
+  }
+
+  test("AuthType LDAP") {
+    val conf = KyuubiConf().set(KyuubiConf.AUTHENTICATION_METHOD, Seq("LDAP"))
+    val authFactory = new KyuubiAuthenticationFactory(conf)
+    authFactory.getTTransportFactory
+    assert(Security.getProviders.exists(_.isInstanceOf[SaslPlainProvider]))
+  }
+
+  test("AuthType KERBEROS w/o keytab/principal") {
+    val conf = KyuubiConf().set(KyuubiConf.AUTHENTICATION_METHOD, Seq("KERBEROS"))
+
+    val factory = new KyuubiAuthenticationFactory(conf)
+    val e = intercept[LoginException](factory.getTTransportFactory)
+    assert(e.getMessage startsWith "Kerberos principal should have 3 parts")
+  }
+
+  test("AuthType is NOSASL if only NOSASL is specified") {
+    val conf = KyuubiConf().set(KyuubiConf.AUTHENTICATION_METHOD, Seq("NOSASL"))
+    var factory = new KyuubiAuthenticationFactory(conf)
+    !factory.getTTransportFactory.isInstanceOf[TSaslServerTransport.Factory]
+
+    conf.set(KyuubiConf.AUTHENTICATION_METHOD, Seq("NOSASL", "NONE"))
+    factory = new KyuubiAuthenticationFactory(conf)
+    factory.getTTransportFactory.isInstanceOf[TSaslServerTransport.Factory]
+  }
+}

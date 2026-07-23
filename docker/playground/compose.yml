@@ -1,0 +1,126 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ACCESS: 0.0.0.0:9001
+    hostname: rustfs
+    ports:
+      - 9000
+      - 9001:9001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  rustfs-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_REGION: us-east-1
+    entrypoint: /bin/sh
+    command: -c "aws --endpoint-url http://rustfs:9000 s3api create-bucket --bucket spark-bucket"
+
+  postgres:
+    image: postgres:${POSTGRES_VERSION}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: metastore
+    container_name: postgres
+    hostname: postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - ./script/hive-schema-2.3.0.postgres.sql:/docker-entrypoint-initdb.d/hive-schema-2.3.0.postgres.sql
+      - ./script/hive-txn-schema-2.3.0.postgres.sql:/docker-entrypoint-initdb.d/hive-txn-schema-2.3.0.postgres.sql
+
+  zookeeper:
+    image: zookeeper:${ZOOKEEPER_VERSION}
+    ports:
+      - 2181
+    container_name: zookeeper
+    hostname: zookeeper
+
+  metastore:
+    image: nekyuubi/kyuubi-playground-metastore:${KYUUBI_VERSION}
+    container_name: metastore
+    hostname: metastore
+    ports:
+      - 9083
+    volumes:
+      - ./conf/core-site.xml:/etc/hadoop/conf/core-site.xml
+      - ./conf/hive-site.xml:/etc/hive/conf/hive-site.xml
+    depends_on:
+      - postgres
+
+  kyuubi:
+    image: nekyuubi/kyuubi-playground-kyuubi:${KYUUBI_VERSION}
+    container_name: kyuubi
+    hostname: kyuubi
+    ports:
+      - 4040-4050:4040-4050
+      - 10009:10009
+      - 10099:10099
+    volumes:
+      - ./conf/core-site.xml:/etc/hadoop/conf/core-site.xml
+      - ./conf/hive-site.xml:/etc/hive/conf/hive-site.xml
+      - ./conf/spark-defaults.conf:/etc/spark/conf/spark-defaults.conf
+      - ./conf/kyuubi-defaults.conf:/etc/kyuubi/conf/kyuubi-defaults.conf
+      - ./conf/kyuubi-log4j2.xml:/etc/kyuubi/conf/log4j2.xml
+      - ./script/load-dataset-tpcds-tiny.sql:/opt/load_data/load-dataset-tpcds-tiny.sql
+      - ./script/load-dataset-tpch-tiny.sql:/opt/load_data/load-dataset-tpch-tiny.sql
+    depends_on:
+      - metastore
+      - rustfs
+      - zookeeper
+
+  prometheus:
+    # leave `v` here for match prometheus docker image tag
+    image: prom/prometheus:v${PROMETHEUS_VERSION}
+    container_name: prometheus
+    hostname: prometheus
+    ports:
+      - 9090:9090
+      - 8123:8123
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana-oss:${GRAFANA_VERSION}
+    container_name: grafana
+    hostname: grafana
+    ports:
+      - 3000:3000
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./grafana/datasource/prometheus.yaml:/etc/grafana/provisioning/datasources/prometheus.yaml
+    depends_on:
+    - prometheus
