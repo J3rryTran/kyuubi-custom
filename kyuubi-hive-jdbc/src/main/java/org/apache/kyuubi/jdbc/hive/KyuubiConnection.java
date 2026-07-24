@@ -60,6 +60,8 @@ import org.apache.http.protocol.HttpContext;
 import org.apache.http.ssl.SSLContexts;
 import org.apache.kyuubi.jdbc.hive.adapter.SQLConnection;
 import org.apache.kyuubi.jdbc.hive.auth.*;
+import org.apache.kyuubi.jdbc.hive.auth.oidc.OidcAuthenticator;
+import org.apache.kyuubi.jdbc.hive.auth.oidc.OidcParams;
 import org.apache.kyuubi.jdbc.hive.cli.FetchType;
 import org.apache.kyuubi.jdbc.hive.cli.RowSet;
 import org.apache.kyuubi.jdbc.hive.cli.RowSetFactory;
@@ -432,6 +434,16 @@ public class KyuubiConnection implements SQLConnection, KyuubiLoggable {
     return transport;
   }
 
+  /** Lazily-created OIDC authenticator; retained so the session can be logged out on close. */
+  private OidcAuthenticator oidcAuthenticator;
+
+  private OidcAuthenticator getOrCreateOidcAuthenticator() {
+    if (oidcAuthenticator == null) {
+      oidcAuthenticator = new OidcAuthenticator(sessConfMap);
+    }
+    return oidcAuthenticator;
+  }
+
   private CloseableHttpClient getHttpClient(Boolean useSsl) throws SQLException {
     boolean isCookieEnabled = isCookieEnabled();
     String cookieName = sessConfMap.getOrDefault(COOKIE_NAME, DEFAULT_COOKIE_NAMES_HS2);
@@ -456,7 +468,27 @@ public class KyuubiConnection implements SQLConnection, KyuubiLoggable {
     if (!isSaslAuthMode()) {
       requestInterceptor = null;
     } else if (isPlainSaslAuthMode()) {
-      if (isJwtAuthMode()) {
+      if (isOidcAuthMode()) {
+        /*
+         * OIDC: acquire an OAuth2 access token interactively (Authorization Code + PKCE, or Device
+         * flow), then transmit it via the existing Bearer interceptor. The authenticator is supplied
+         * per request so the token is transparently refreshed on long-running connections.
+         */
+        OidcAuthenticator authenticator = getOrCreateOidcAuthenticator();
+        try {
+          authenticator.acquireInitialToken();
+        } catch (RuntimeException e) {
+          throw new KyuubiSQLException("OIDC authentication failed: " + e.getMessage(), "08S01", e);
+        }
+        requestInterceptor =
+            new HttpJwtAuthRequestInterceptor(
+                authenticator,
+                cookieStore,
+                cookieName,
+                useSsl,
+                additionalHttpHeaders,
+                customCookies);
+      } else if (isJwtAuthMode()) {
         final String signedJwt = getJWT();
         Preconditions.checkArgument(
             signedJwt != null && !signedJwt.isEmpty(),
@@ -707,6 +739,13 @@ public class KyuubiConnection implements SQLConnection, KyuubiLoggable {
       // Raw socket connection (non-sasl)
       if (!isSaslAuthMode()) {
         return socketTransport;
+      }
+      // OIDC bearer tokens are only carried over the HTTP transport (Authorization header).
+      if (isOidcAuthMode()) {
+        throw new KyuubiSQLException(
+            "OIDC authentication requires HTTP transport; add "
+                + "transportMode=http;httpPath=cliservice to the JDBC URL",
+            "08S01");
       }
       // Use PLAIN Sasl connection with user/password
       if (isPlainSaslAuthMode()) {
@@ -1003,6 +1042,18 @@ public class KyuubiConnection implements SQLConnection, KyuubiLoggable {
         || sessConfMap.containsKey(JdbcConnectionParams.AUTH_TYPE_JWT_KEY);
   }
 
+  /**
+   * OIDC mode acquires a JWT access token interactively rather than expecting a pre-supplied one.
+   * Triggered by {@code auth=oidc}, by {@code oidc=true} layered on {@code auth=jwt}, or by the
+   * mere presence of an {@code oidcIssuer}/{@code oidcDiscoveryUri} parameter.
+   */
+  private boolean isOidcAuthMode() {
+    return OidcParams.AUTH_TYPE_OIDC.equalsIgnoreCase(sessConfMap.get(AUTH_TYPE))
+        || "true".equalsIgnoreCase(sessConfMap.get(OidcParams.OIDC_ENABLED))
+        || sessConfMap.containsKey(OidcParams.OIDC_ISSUER)
+        || sessConfMap.containsKey(OidcParams.OIDC_DISCOVERY_URI);
+  }
+
   private boolean isKerberosAuthMode() {
     return isSaslAuthMode() && hasSessionValue(AUTH_PRINCIPAL);
   }
@@ -1135,6 +1186,9 @@ public class KyuubiConnection implements SQLConnection, KyuubiLoggable {
       if (transport != null && transport.isOpen()) {
         transport.close();
         transport = null;
+      }
+      if (oidcAuthenticator != null) {
+        oidcAuthenticator.logout();
       }
     }
   }

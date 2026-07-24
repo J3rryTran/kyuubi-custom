@@ -18,6 +18,7 @@
 package org.apache.kyuubi.jdbc.hive.auth;
 
 import java.util.Map;
+import java.util.function.Supplier;
 import org.apache.http.HttpRequest;
 import org.apache.http.client.CookieStore;
 import org.apache.http.protocol.HttpContext;
@@ -25,9 +26,13 @@ import org.apache.http.protocol.HttpContext;
 /**
  * This implements the logic to intercept the HTTP requests from the Hive Jdbc connection and adds
  * JWT auth header.
+ *
+ * <p>The token is provided by a {@link Supplier} evaluated per request, so a dynamic source (e.g.
+ * an OIDC authenticator that transparently refreshes the access token) stays current across a
+ * long-running connection. A fixed pre-supplied JWT is wrapped as a constant supplier.
  */
 public class HttpJwtAuthRequestInterceptor extends HttpRequestInterceptorBase {
-  private final String signedJwt;
+  private final Supplier<String> jwtSupplier;
 
   public HttpJwtAuthRequestInterceptor(
       String signedJwt,
@@ -36,12 +41,23 @@ public class HttpJwtAuthRequestInterceptor extends HttpRequestInterceptorBase {
       boolean isSSL,
       Map<String, String> additionalHeaders,
       Map<String, String> customCookies) {
+    this(() -> signedJwt, cookieStore, cn, isSSL, additionalHeaders, customCookies);
+  }
+
+  public HttpJwtAuthRequestInterceptor(
+      Supplier<String> jwtSupplier,
+      CookieStore cookieStore,
+      String cn,
+      boolean isSSL,
+      Map<String, String> additionalHeaders,
+      Map<String, String> customCookies) {
     super(cookieStore, cn, isSSL, additionalHeaders, customCookies);
-    this.signedJwt = signedJwt;
+    this.jwtSupplier = jwtSupplier;
   }
 
   @Override
   protected void addHttpAuthHeader(HttpRequest httpRequest, HttpContext httpContext) {
-    httpRequest.addHeader(HttpAuthUtils.AUTHORIZATION, HttpAuthUtils.BEARER + " " + signedJwt);
+    httpRequest.addHeader(
+        HttpAuthUtils.AUTHORIZATION, HttpAuthUtils.BEARER + " " + jwtSupplier.get());
   }
 }

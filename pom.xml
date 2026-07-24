@@ -54,6 +54,7 @@
     <modules>
         <module>dev/kyuubi-codecov</module>
         <module>extensions/server/kyuubi-server-plugin</module>
+        <module>extensions/server/kyuubi-oidc-auth</module>
         <module>extensions/flink/kyuubi-flink-token-provider</module>
         <module>extensions/spark/kyuubi-extension-spark-jdbc-dialect</module>
         <module>extensions/spark/kyuubi-spark-authz</module>
@@ -1730,6 +1731,8 @@
                             </includes>
                             <excludes>
                                 <exclude>docs/*/lib/python*/**/*.md</exclude>
+                                <!-- Local design notes, not part of the published docs -->
+                                <exclude>docs/Add Function/**/*.md</exclude>
                             </excludes>
                             <flexmark>
                                 <version>${flexmark.version}</version>
