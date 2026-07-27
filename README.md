@@ -13,9 +13,18 @@ version 1.10.3
 
 > ./build/dist --tgz --web-ui --spark-provided --flink-provided --hive-provided
 
+  - Build binary with specific version   
+> ./build/dist --tgz --web-ui --spark-provided --flink-provided --hive-provided \                                                                                                                                                   
+    -Dspark.version=<version_spark> \
+    -Dflink.version=<version_flink> \ 
+    -Dhive.version=<version_hive>
+
   - Build module:
 
 > build/mvn clean install -pl <module> -am -DskipTests -Dspotless.check.skip=true
+
+  - Push to dockerhub:
+> bin/docker-image-tool.sh -r <name_account> -i <name_repo_dockerhub> -t <tag> push
 
 ### The list of module:
 - Server: kyuubi-server
