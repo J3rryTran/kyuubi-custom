@@ -27,8 +27,15 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Map;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * Minimal JSON-over-HTTP helper built on the JDK {@link HttpURLConnection} (no extra dependency).
@@ -59,10 +66,68 @@ public class HttpJsonClient {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private final int connectTimeoutMs;
   private final int readTimeoutMs;
+  private final boolean insecureTls;
+
+  /** Lazily built trust-all socket factory shared by every insecure connection. */
+  private static volatile SSLSocketFactory insecureSocketFactory;
+
+  private static final HostnameVerifier ALLOW_ALL_HOSTS = (hostname, session) -> true;
 
   public HttpJsonClient(int connectTimeoutMs, int readTimeoutMs) {
+    this(connectTimeoutMs, readTimeoutMs, false);
+  }
+
+  public HttpJsonClient(int connectTimeoutMs, int readTimeoutMs, boolean insecureTls) {
     this.connectTimeoutMs = connectTimeoutMs;
     this.readTimeoutMs = readTimeoutMs;
+    this.insecureTls = insecureTls;
+  }
+
+  /**
+   * When {@code insecureTls} is enabled and the connection is HTTPS, disable certificate and
+   * hostname verification. INSECURE — intended only for internal providers with self-signed certs.
+   */
+  private void applyTls(HttpURLConnection conn) {
+    if (insecureTls && conn instanceof HttpsURLConnection) {
+      HttpsURLConnection https = (HttpsURLConnection) conn;
+      https.setSSLSocketFactory(insecureSocketFactory());
+      https.setHostnameVerifier(ALLOW_ALL_HOSTS);
+    }
+  }
+
+  private static SSLSocketFactory insecureSocketFactory() {
+    SSLSocketFactory f = insecureSocketFactory;
+    if (f == null) {
+      synchronized (HttpJsonClient.class) {
+        f = insecureSocketFactory;
+        if (f == null) {
+          try {
+            TrustManager[] trustAll =
+                new TrustManager[] {
+                  new X509TrustManager() {
+                    @Override
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+
+                    @Override
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() {
+                      return new X509Certificate[0];
+                    }
+                  }
+                };
+            SSLContext ctx = SSLContext.getInstance("TLS");
+            ctx.init(null, trustAll, new java.security.SecureRandom());
+            f = ctx.getSocketFactory();
+            insecureSocketFactory = f;
+          } catch (Exception e) {
+            throw new OidcAuthException("Failed to init insecure TLS: " + e.getMessage(), e);
+          }
+        }
+      }
+    }
+    return f;
   }
 
   /** GET a JSON document; throws on non-2xx. */
@@ -73,6 +138,7 @@ public class HttpJsonClient {
       conn.setRequestProperty("Accept", "application/json");
       conn.setConnectTimeout(connectTimeoutMs);
       conn.setReadTimeout(readTimeoutMs);
+      applyTls(conn);
       Response r = readResponse(conn);
       if (!r.isSuccess()) {
         throw new OidcAuthException("GET " + url + " failed: HTTP " + r.status + " " + r.body);
@@ -107,6 +173,7 @@ public class HttpJsonClient {
       }
       conn.setConnectTimeout(connectTimeoutMs);
       conn.setReadTimeout(readTimeoutMs);
+      applyTls(conn);
 
       byte[] payload = encodeForm(form).getBytes(StandardCharsets.UTF_8);
       try (OutputStream os = conn.getOutputStream()) {

@@ -51,6 +51,7 @@ public class OidcConfig {
   private final boolean tokenCache;
   private final boolean browserEnabled;
   private final boolean logout;
+  private final boolean insecureTls;
 
   private OidcConfig(
       String issuer,
@@ -62,7 +63,8 @@ public class OidcConfig {
       int redirectPort,
       boolean tokenCache,
       boolean browserEnabled,
-      boolean logout) {
+      boolean logout,
+      boolean insecureTls) {
     this.issuer = issuer;
     this.discoveryUri = discoveryUri;
     this.clientId = clientId;
@@ -73,6 +75,7 @@ public class OidcConfig {
     this.tokenCache = tokenCache;
     this.browserEnabled = browserEnabled;
     this.logout = logout;
+    this.insecureTls = insecureTls;
   }
 
   /**
@@ -140,6 +143,7 @@ public class OidcConfig {
     boolean tokenCache = !"false".equalsIgnoreCase(conf.get(OidcParams.OIDC_TOKEN_CACHE));
     boolean browserEnabled = !"none".equalsIgnoreCase(conf.get(OidcParams.OIDC_BROWSER));
     boolean logout = "true".equalsIgnoreCase(conf.get(OidcParams.OIDC_LOGOUT));
+    boolean insecureTls = "true".equalsIgnoreCase(conf.get(OidcParams.OIDC_INSECURE_TLS));
 
     return new OidcConfig(
         issuer,
@@ -151,7 +155,8 @@ public class OidcConfig {
         redirectPort,
         tokenCache,
         browserEnabled,
-        logout);
+        logout,
+        insecureTls);
   }
 
   private static String trimToNull(String s) {
@@ -201,6 +206,10 @@ public class OidcConfig {
 
   public boolean tokenCacheEnabled() {
     return tokenCache;
+  }
+
+  public boolean insecureTls() {
+    return insecureTls;
   }
 
   public boolean browserEnabled() {

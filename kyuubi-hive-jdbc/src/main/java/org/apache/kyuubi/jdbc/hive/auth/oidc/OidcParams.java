@@ -42,4 +42,11 @@ public final class OidcParams {
   public static final String OIDC_TOKEN_CACHE = "oidcTokenCache";
   public static final String OIDC_BROWSER = "oidcBrowser";
   public static final String OIDC_LOGOUT = "oidcLogout";
+
+  /**
+   * {@code oidcInsecureTls=true} — skip TLS certificate and hostname verification for the calls to
+   * the OIDC provider (discovery, JWKS, token, device endpoints). INSECURE: only for internal/dev
+   * providers using self-signed certificates. Never enable against a production issuer.
+   */
+  public static final String OIDC_INSECURE_TLS = "oidcInsecureTls";
 }

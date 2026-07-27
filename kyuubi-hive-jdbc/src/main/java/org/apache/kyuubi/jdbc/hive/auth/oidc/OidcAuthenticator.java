@@ -52,7 +52,7 @@ public class OidcAuthenticator implements Supplier<String> {
   public OidcAuthenticator(Map<String, String> sessionConf) {
     this.config = OidcConfig.fromSessionConf(sessionConf);
     this.cacheKey = config.cacheKey();
-    this.http = new HttpJsonClient(CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS);
+    this.http = new HttpJsonClient(CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS, config.insecureTls());
   }
 
   /** Eagerly acquire a token so connection open fails fast on auth errors. */
