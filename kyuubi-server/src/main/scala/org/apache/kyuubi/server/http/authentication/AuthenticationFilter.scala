@@ -29,7 +29,8 @@ import org.apache.kyuubi.config.KyuubiConf
 import org.apache.kyuubi.config.KyuubiConf.{AUTHENTICATION_METHOD, FRONTEND_PROXY_HTTP_CLIENT_IP_HEADER}
 import org.apache.kyuubi.server.http.util.HttpAuthUtils.AUTHORIZATION_HEADER
 import org.apache.kyuubi.service.authentication.{AuthTypes, InternalSecurityAccessor}
-import org.apache.kyuubi.service.authentication.AuthTypes.{CUSTOM, KERBEROS, NOSASL}
+import org.apache.kyuubi.service.authentication.AuthenticationProviderFactory
+import org.apache.kyuubi.service.authentication.AuthTypes.{CUSTOM, KERBEROS, NOSASL, OIDC}
 
 class AuthenticationFilter(conf: KyuubiConf) extends Filter with Logging {
   import AuthenticationFilter._
@@ -69,12 +70,22 @@ class AuthenticationFilter(conf: KyuubiConf) extends Filter with Logging {
       addAuthHandler(kerberosHandler)
     }
     basicAuthTypeOpt.foreach { basicAuthType =>
-      if (basicAuthType.equals(CUSTOM)) {
-        conf.get(KyuubiConf.AUTHENTICATION_CUSTOM_BASIC_CLASS).foreach { _ =>
-          val basicHandler = new BasicAuthenticationHandler(CUSTOM)
+      if (basicAuthType.equals(CUSTOM) || basicAuthType.equals(OIDC)) {
+        val basicClass = conf.get(KyuubiConf.AUTHENTICATION_CUSTOM_BASIC_CLASS).orElse {
+          if (basicAuthType.equals(OIDC)) {
+            Some(AuthenticationProviderFactory.OIDC_PASSWD_PROVIDER_CLASS)
+          } else None
+        }
+        basicClass.foreach { _ =>
+          val basicHandler = new BasicAuthenticationHandler(basicAuthType)
           addAuthHandler(basicHandler)
         }
-        conf.get(KyuubiConf.AUTHENTICATION_CUSTOM_BEARER_CLASS).foreach { bearerClassName =>
+        val bearerClass = conf.get(KyuubiConf.AUTHENTICATION_CUSTOM_BEARER_CLASS).orElse {
+          if (basicAuthType.equals(OIDC)) {
+            Some(AuthenticationProviderFactory.OIDC_BEARER_PROVIDER_CLASS)
+          } else None
+        }
+        bearerClass.foreach { bearerClassName =>
           val bearerHandler = new BearerAuthenticationHandler(bearerClassName)
           addAuthHandler(bearerHandler)
         }
