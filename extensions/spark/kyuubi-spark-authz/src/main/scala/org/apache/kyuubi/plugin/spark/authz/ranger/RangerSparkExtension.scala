@@ -41,20 +41,23 @@ import org.apache.kyuubi.plugin.spark.authz.rule.rowfilter.{FilterDataSourceV2St
  *  @since 1.6.0
  */
 class RangerSparkExtension extends (SparkSessionExtensions => Unit) {
-  SparkRangerAdminPlugin.initialize()
-
   override def apply(v1: SparkSessionExtensions): Unit = {
-    v1.injectCheckRule(AuthzConfigurationChecker)
-    v1.injectResolutionRule(_ => RuleReplaceShowObjectCommands)
-    v1.injectResolutionRule(_ => RuleApplyPermanentViewMarker)
-    v1.injectResolutionRule(_ => RuleApplyTypeOfMarker)
-    v1.injectResolutionRule(RuleApplyRowFilter)
-    v1.injectResolutionRule(RuleApplyDataMaskingStage0)
-    v1.injectResolutionRule(RuleApplyDataMaskingStage1)
-    v1.injectOptimizerRule(_ => RuleEliminateMarker)
-    v1.injectOptimizerRule(RuleAuthorization)
-    v1.injectOptimizerRule(RuleEliminatePermanentViewMarker)
-    v1.injectOptimizerRule(_ => RuleEliminateTypeOf)
-    v1.injectPlannerStrategy(FilterDataSourceV2Strategy)
+    def initialized[T](spark: org.apache.spark.sql.SparkSession)(value: => T): T = {
+      SparkRangerAdminPlugin.initialize(spark)
+      value
+    }
+
+    v1.injectCheckRule(spark => initialized(spark)(AuthzConfigurationChecker(spark)))
+    v1.injectResolutionRule(spark => initialized(spark)(RuleReplaceShowObjectCommands))
+    v1.injectResolutionRule(spark => initialized(spark)(RuleApplyPermanentViewMarker))
+    v1.injectResolutionRule(spark => initialized(spark)(RuleApplyTypeOfMarker))
+    v1.injectResolutionRule(spark => initialized(spark)(RuleApplyRowFilter(spark)))
+    v1.injectResolutionRule(spark => initialized(spark)(RuleApplyDataMaskingStage0(spark)))
+    v1.injectResolutionRule(spark => initialized(spark)(RuleApplyDataMaskingStage1(spark)))
+    v1.injectOptimizerRule(spark => initialized(spark)(RuleEliminateMarker))
+    v1.injectOptimizerRule(spark => initialized(spark)(RuleAuthorization(spark)))
+    v1.injectOptimizerRule(spark => initialized(spark)(RuleEliminatePermanentViewMarker(spark)))
+    v1.injectOptimizerRule(spark => initialized(spark)(RuleEliminateTypeOf))
+    v1.injectPlannerStrategy(spark => initialized(spark)(FilterDataSourceV2Strategy(spark)))
   }
 }

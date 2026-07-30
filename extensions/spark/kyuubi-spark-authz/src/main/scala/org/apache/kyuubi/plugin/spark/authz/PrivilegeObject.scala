@@ -84,8 +84,7 @@ object PrivilegeObject {
       function.functionName,
       Nil,
       None,
-      None
-    ) // TODO: Support catalog for function
+      function.catalog)
   }
 
   def apply(uri: Uri): PrivilegeObject = {

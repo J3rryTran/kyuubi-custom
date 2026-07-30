@@ -31,6 +31,7 @@ import org.apache.kyuubi.plugin.spark.authz.OperationType.OperationType
 class AccessResource private (val objectType: ObjectType, val catalog: Option[String])
   extends RangerAccessResourceImpl {
   implicit def asString(obj: Object): String = if (obj != null) obj.asInstanceOf[String] else null
+  def getCatalog: String = getValue("catalog")
   def getDatabase: String = getValue("database")
   def getTable: String = getValue("table")
   def getColumn: String = getValue("column")
@@ -49,21 +50,67 @@ object AccessResource {
       thirdLevelResource: String,
       owner: Option[String] = None,
       catalog: Option[String] = None): AccessResource = {
-    val resource = new AccessResource(objectType, catalog)
+    build(
+      SparkRangerAdminPlugin.profile,
+      objectType,
+      firstLevelResource,
+      secondLevelResource,
+      thirdLevelResource,
+      owner,
+      catalog)
+  }
+
+  private[ranger] def build(
+      profile: RangerServiceProfile,
+      objectType: ObjectType,
+      firstLevelResource: String,
+      secondLevelResource: String,
+      thirdLevelResource: String,
+      owner: Option[String] = None,
+      catalog: Option[String] = None): AccessResource = {
+    val normalizedCatalog = profile.normalizeCatalog(catalog)
+    val resource = new AccessResource(objectType, normalizedCatalog)
+
+    def setCatalog(): Unit = normalizedCatalog.foreach(resource.setValue("catalog", _))
 
     resource.objectType match {
-      case DATABASE => resource.setValue("database", firstLevelResource)
+      case CATALOG => setCatalog()
+      case DATABASE =>
+        if (profile.serviceType == "starrocks") setCatalog()
+        resource.setValue("database", firstLevelResource)
       case FUNCTION =>
+        if (profile.serviceType == "starrocks") setCatalog()
         resource.setValue("database", Option(firstLevelResource).getOrElse(""))
-        resource.setValue("udf", secondLevelResource)
+        resource.setValue(
+          if (profile.serviceType == "starrocks") "function" else "udf",
+          secondLevelResource)
       case COLUMN =>
+        if (profile.serviceType == "starrocks") setCatalog()
         resource.setValue("database", firstLevelResource)
         resource.setValue("table", secondLevelResource)
         resource.setValue("column", thirdLevelResource)
-      case TABLE | VIEW | INDEX =>
+      case TABLE =>
+        if (profile.serviceType == "starrocks") setCatalog()
+        resource.setValue("database", firstLevelResource)
+        resource.setValue("table", secondLevelResource)
+      case VIEW =>
+        if (profile.serviceType == "starrocks") setCatalog()
+        resource.setValue("database", firstLevelResource)
+        resource.setValue(
+          if (profile.serviceType == "starrocks") "view" else "table",
+          secondLevelResource)
+      case INDEX =>
+        if (profile.serviceType == "starrocks") {
+          throw new org.apache.kyuubi.plugin.spark.authz.AccessControlException(
+            "Index resources are unsupported for Ranger service type [starrocks]")
+        }
         resource.setValue("database", firstLevelResource)
         resource.setValue("table", secondLevelResource)
       case URI =>
+        if (profile.serviceType == "starrocks") {
+          throw new org.apache.kyuubi.plugin.spark.authz.AccessControlException(
+            "URI resources are unsupported for Ranger service type [starrocks]")
+        }
         val objectList = new util.ArrayList[String]
         Option(firstLevelResource)
           .filter(_.nonEmpty)
@@ -74,7 +121,7 @@ object AccessResource {
           }
         resource.setValue("url", objectList)
     }
-    resource.setServiceDef(SparkRangerAdminPlugin.getServiceDef)
+    SparkRangerAdminPlugin.getServiceDefOption.foreach(resource.setServiceDef)
     owner.foreach(resource.setOwnerUser)
     resource
   }
@@ -96,5 +143,15 @@ object AccessResource {
       obj.columns.mkString(","),
       obj.owner,
       obj.catalog)
+  }
+
+  private[ranger] def apply(spec: RangerAuthorizationSpec): AccessResource = {
+    apply(
+      spec.objectType,
+      spec.firstLevelResource,
+      spec.secondLevelResource,
+      spec.thirdLevelResource,
+      spec.owner,
+      spec.catalog)
   }
 }

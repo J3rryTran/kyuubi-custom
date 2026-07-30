@@ -42,7 +42,12 @@ case class RuleApplyRowFilter(spark: SparkSession) extends RuleHelper {
   private def applyFilter(
       plan: LogicalPlan,
       table: Table): LogicalPlan = {
-    val are = AccessResource(ObjectType.TABLE, table.database.orNull, table.table, null)
+    val are = AccessResource(
+      ObjectType.TABLE,
+      table.database.orNull,
+      table.table,
+      null,
+      catalog = table.catalog)
     val art = AccessRequest(are, ugi, QUERY, AccessType.SELECT)
     val filterExpr = SparkRangerAdminPlugin.getFilterExpr(art).map(parse)
     val filtered = filterExpr.foldLeft(plan)((p, expr) => Filter(expr, RowFilterMarker(p)))

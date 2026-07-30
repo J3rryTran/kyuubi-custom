@@ -49,12 +49,20 @@ case class FilteredShowTablesCommand(delegated: RunnableCommand)
 
   private val isExtended = getField[Boolean](delegated, "isExtended")
 
-  override protected def isAllowed(r: Row, ugi: UserGroupInformation): Boolean = {
+  override protected def isAllowed(
+      r: Row,
+      ugi: UserGroupInformation,
+      spark: SparkSession): Boolean = {
     val database = r.getString(0)
     val table = r.getString(1)
     val isTemp = r.getBoolean(2)
     val objectType = if (isTemp) ObjectType.VIEW else ObjectType.TABLE
-    val resource = AccessResource(objectType, database, table, null)
+    val resource = AccessResource(
+      objectType,
+      database,
+      table,
+      null,
+      catalog = CatalogResolver.currentCatalog(spark))
     val accessType = if (isExtended) AccessType.SELECT else AccessType.USE
     val request = AccessRequest(resource, ugi, OperationType.SHOWTABLES, accessType)
     val result = SparkRangerAdminPlugin.isAccessAllowed(request)
@@ -70,10 +78,13 @@ abstract class FilteredShowObjectCommand(delegated: RunnableCommand)
   override def run(spark: SparkSession): Seq[Row] = {
     val rows = delegated.run(spark)
     val ugi = AuthZUtils.getAuthzUgi(spark.sparkContext)
-    rows.filter(r => isAllowed(r, ugi))
+    rows.filter(r => isAllowed(r, ugi, spark))
   }
 
-  protected def isAllowed(r: Row, ugi: UserGroupInformation): Boolean
+  protected def isAllowed(
+      r: Row,
+      ugi: UserGroupInformation,
+      spark: SparkSession): Boolean
 
   override def withNewChildrenInternal(newChildren: IndexedSeq[LogicalPlan]): LogicalPlan = this
 }
@@ -81,15 +92,28 @@ abstract class FilteredShowObjectCommand(delegated: RunnableCommand)
 case class FilteredShowFunctionsCommand(delegated: RunnableCommand)
   extends FilteredShowObjectCommand(delegated) with WithInternalChildren {
 
-  override protected def isAllowed(r: Row, ugi: UserGroupInformation): Boolean = {
+  override protected def isAllowed(
+      r: Row,
+      ugi: UserGroupInformation,
+      spark: SparkSession): Boolean = {
     val functionName = r.getString(0)
-    val items = functionName.split("\\.", 2)
+    val items = functionName.split("\\.")
     // the system functions return true
     if (items.length == 1) {
       return true
     }
 
-    val resource = AccessResource(ObjectType.FUNCTION, items(0), items(1), null)
+    val (catalog, database, function) = if (items.length >= 3) {
+      (Some(items.dropRight(2).mkString(".")), items(items.length - 2), items.last)
+    } else {
+      (CatalogResolver.currentCatalog(spark), items(0), items(1))
+    }
+    val resource = AccessResource(
+      ObjectType.FUNCTION,
+      database,
+      function,
+      null,
+      catalog = catalog)
     val request = AccessRequest(resource, ugi, OperationType.SHOWFUNCTIONS, AccessType.USE)
     val result = SparkRangerAdminPlugin.isAccessAllowed(request)
     result != null && result.getIsAllowed
@@ -106,11 +130,19 @@ case class FilteredShowColumnsCommand(delegated: RunnableCommand)
     val table = delegated.asInstanceOf[ShowColumnsCommand].tableName
     val ugi = AuthZUtils.getAuthzUgi(spark.sparkContext)
     rows.filter(f =>
-      isAllowed(Row(table.database.orNull, table.table, f.getString(0)), ugi))
+      isAllowed(Row(table.database.orNull, table.table, f.getString(0)), ugi, spark))
   }
 
-  override protected def isAllowed(r: Row, ugi: UserGroupInformation): Boolean = {
-    val resource = AccessResource(ObjectType.COLUMN, r.getString(0), r.getString(1), r.getString(2))
+  override protected def isAllowed(
+      r: Row,
+      ugi: UserGroupInformation,
+      spark: SparkSession): Boolean = {
+    val resource = AccessResource(
+      ObjectType.COLUMN,
+      r.getString(0),
+      r.getString(1),
+      r.getString(2),
+      catalog = CatalogResolver.currentCatalog(spark))
     val request = AccessRequest(resource, ugi, OperationType.SHOWCOLUMNS, AccessType.USE)
     val result = SparkRangerAdminPlugin.isAccessAllowed(request)
     result != null && result.getIsAllowed

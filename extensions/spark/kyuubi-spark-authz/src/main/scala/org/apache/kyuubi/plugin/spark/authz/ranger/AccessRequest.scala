@@ -23,13 +23,13 @@ import java.util.Date
 import scala.collection.JavaConverters._
 
 import org.apache.hadoop.security.UserGroupInformation
-import org.apache.ranger.plugin.policyengine.{RangerAccessRequestImpl, RangerPolicyEngine}
+import org.apache.ranger.plugin.policyengine.RangerAccessRequestImpl
 
 import org.apache.kyuubi.plugin.spark.authz.OperationType.OperationType
 import org.apache.kyuubi.plugin.spark.authz.ranger.AccessType._
 import org.apache.kyuubi.util.reflect.ReflectUtils._
 
-case class AccessRequest private (accessType: AccessType) extends RangerAccessRequestImpl
+case class AccessRequest private (accessType: String) extends RangerAccessRequestImpl
 
 object AccessRequest {
   def apply(
@@ -37,6 +37,18 @@ object AccessRequest {
       user: UserGroupInformation,
       opType: OperationType,
       accessType: AccessType): AccessRequest = {
+    val wireAccessType = SparkRangerAdminPlugin.profile.accessType(
+      accessType,
+      opType,
+      resource.objectType)
+    apply(resource, user, opType, wireAccessType)
+  }
+
+  def apply(
+      resource: AccessResource,
+      user: UserGroupInformation,
+      opType: OperationType,
+      accessType: String): AccessRequest = {
     val userName = user.getShortUserName
     val userGroups = getUserGroups(user)
     val req = new AccessRequest(accessType)
@@ -45,22 +57,15 @@ object AccessRequest {
     req.setUserGroups(userGroups)
     req.setAction(opType.toString)
     try {
-      val roles = invokeAs[JSet[String]](
-        SparkRangerAdminPlugin,
-        "getRolesFromUserAndGroups",
-        (classOf[String], userName),
-        (classOf[JSet[String]], userGroups))
+      val roles = SparkRangerAdminPlugin.getRolesFromUserAndGroups(userName, userGroups)
       invokeAs[Unit](req, "setUserRoles", (classOf[JSet[String]], roles))
     } catch {
       case _: Exception =>
     }
     req.setAccessTime(new Date())
-    accessType match {
-      case USE => req.setAccessType(RangerPolicyEngine.ANY_ACCESS)
-      case _ => req.setAccessType(accessType.toString.toLowerCase)
-    }
+    req.setAccessType(accessType)
     try {
-      val clusterName = invokeAs[String](SparkRangerAdminPlugin, "getClusterName")
+      val clusterName = SparkRangerAdminPlugin.getClusterName
       invokeAs[Unit](req, "setClusterName", (classOf[String], clusterName))
     } catch {
       case _: Exception =>
@@ -74,7 +79,7 @@ object AccessRequest {
 
   private def getUserGroupsFromUserStore(user: UserGroupInformation): Option[JSet[String]] = {
     try {
-      val storeEnricher = invokeAs[AnyRef](SparkRangerAdminPlugin, "getUserStoreEnricher")
+      val storeEnricher = SparkRangerAdminPlugin.getUserStoreEnricher
       val userStore = invokeAs[AnyRef](storeEnricher, "getRangerUserStore")
       val userGroupMapping =
         invokeAs[JHashMap[String, JSet[String]]](userStore, "getUserGroupMapping")

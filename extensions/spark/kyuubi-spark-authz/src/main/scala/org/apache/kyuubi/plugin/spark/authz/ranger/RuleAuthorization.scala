@@ -25,13 +25,22 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
 import org.apache.kyuubi.plugin.spark.authz._
 import org.apache.kyuubi.plugin.spark.authz.ObjectType._
-import org.apache.kyuubi.plugin.spark.authz.ranger.AccessType.AccessType
 import org.apache.kyuubi.plugin.spark.authz.ranger.SparkRangerAdminPlugin._
 import org.apache.kyuubi.plugin.spark.authz.rule.Authorization
 import org.apache.kyuubi.plugin.spark.authz.util.AuthZUtils._
 
 case class RuleAuthorization(spark: SparkSession) extends Authorization(spark) {
   override def checkPrivileges(spark: SparkSession, plan: LogicalPlan): Unit = {
+    val normalizedPlanName = (plan.nodeName + plan.getClass.getSimpleName)
+      .replaceAll("[^A-Za-z]", "")
+      .toLowerCase(java.util.Locale.ROOT)
+    if (SparkRangerAdminPlugin.profile.serviceType == "starrocks" &&
+      normalizedPlanName.contains("materializedview")) {
+      throw new AccessControlException(
+        s"Unsupported authorization operation [${plan.nodeName}] for Ranger service type " +
+          "[starrocks]: materialized views are not mapped")
+    }
+
     val auditHandler = new SparkRangerAuditHandler
     val ugi = getAuthzUgi(spark.sparkContext)
     val (inputs, outputs, opType) = PrivilegesBuilder.build(plan, spark)
@@ -39,15 +48,16 @@ case class RuleAuthorization(spark: SparkSession) extends Authorization(spark) {
     // Use a HashSet to deduplicate the same AccessResource and AccessType, the requests will be all
     // the non-duplicate requests and in the same order as the input requests.
     val requests = new mutable.ArrayBuffer[AccessRequest]()
-    val requestsSet = new mutable.HashSet[(AccessResource, AccessType)]()
+    val requestsSet = new mutable.HashSet[(AccessResource, String)]()
 
     def addAccessRequest(objects: Iterable[PrivilegeObject], isInput: Boolean): Unit = {
       objects.foreach { obj =>
-        val resource = AccessResource(obj, opType)
-        val accessType = ranger.AccessType(obj, opType, isInput)
-        if (accessType != AccessType.NONE && !requestsSet.contains((resource, accessType))) {
-          requests += AccessRequest(resource, ugi, opType, accessType)
-          requestsSet.add(resource, accessType)
+        SparkRangerAdminPlugin.profile.authorization(obj, opType, isInput).foreach { spec =>
+          val resource = AccessResource(spec)
+          if (!requestsSet.contains((resource, spec.accessType))) {
+            requests += AccessRequest(resource, ugi, opType, spec.accessType)
+            requestsSet.add(resource -> spec.accessType)
+          }
         }
       }
     }

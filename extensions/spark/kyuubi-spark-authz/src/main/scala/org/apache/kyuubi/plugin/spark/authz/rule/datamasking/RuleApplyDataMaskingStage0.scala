@@ -60,8 +60,12 @@ case class RuleApplyDataMaskingStage0(spark: SparkSession) extends RuleHelper {
       plan: LogicalPlan,
       table: Table): LogicalPlan = {
     val newOutput = plan.output.map { attr =>
-      val are =
-        AccessResource(ObjectType.COLUMN, table.database.orNull, table.table, attr.name)
+      val are = AccessResource(
+        ObjectType.COLUMN,
+        table.database.orNull,
+        table.table,
+        attr.name,
+        catalog = table.catalog)
       val art = AccessRequest(are, ugi, QUERY, AccessType.SELECT)
       val maskExprStr = SparkRangerAdminPlugin.getMaskingExpr(art)
       maskExprStr.map(parse).map(Alias(_, attr.name)()).getOrElse(attr)

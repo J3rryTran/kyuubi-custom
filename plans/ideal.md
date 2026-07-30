@@ -1,0 +1,3 @@
+- Hiện tại kyuubi đang sử dụng Kyuubi Spark AuthZ Plugin để gọi đến Hive service trong ranger để kiểm tra phân quyền của user để thực hiện truy vấn dữ liệu trên Lakehouse. Tuy nhiên hiện tại hive service hiện không hỗ trợ phân quyền đến mức catalog mà chỉ phân quyền các mức database/table/column. 
+- Query engine hiện tại đang sử dụng là starrocks và sử dụng service starrocks trong ranger để xác thực phân quyền và có hỗ trợ phân quyền mức catalog.
+- Tôi muốn custom  lại Kyuubi Spark AuthZ Plugin thay vì gọi vào hive service để kiểm tra quyền thì gọi sang starrocks service trên ranger để phân quyền. 

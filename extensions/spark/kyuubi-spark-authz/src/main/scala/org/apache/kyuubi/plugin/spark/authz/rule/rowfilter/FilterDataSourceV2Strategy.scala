@@ -22,21 +22,23 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.SparkStrategy
 
 case class FilterDataSourceV2Strategy(spark: SparkSession) extends SparkStrategy {
+  private def currentCatalog: Option[String] = CatalogResolver.currentCatalog(spark)
+
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     // For Spark 3.1 and below, `ColumnPruning` rule will set `ObjectFilterPlaceHolder#child` to
     // `Project`
     case ObjectFilterPlaceHolder(Project(_, child)) if child.nodeName == "ShowNamespaces" =>
       spark.sessionState.planner.plan(child)
-        .map(FilteredShowNamespaceExec(_, spark.sparkContext)).toSeq
+        .map(FilteredShowNamespaceExec(_, spark.sparkContext, currentCatalog)).toSeq
 
     // For Spark 3.2 and above
     case ObjectFilterPlaceHolder(child) if child.nodeName == "ShowNamespaces" =>
       spark.sessionState.planner.plan(child)
-        .map(FilteredShowNamespaceExec(_, spark.sparkContext)).toSeq
+        .map(FilteredShowNamespaceExec(_, spark.sparkContext, currentCatalog)).toSeq
 
     case ObjectFilterPlaceHolder(child) if child.nodeName == "ShowTables" =>
       spark.sessionState.planner.plan(child)
-        .map(FilteredShowTablesExec(_, spark.sparkContext)).toSeq
+        .map(FilteredShowTablesExec(_, spark.sparkContext, currentCatalog)).toSeq
 
     case _ => Nil
   }

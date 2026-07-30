@@ -29,6 +29,13 @@ import org.apache.kyuubi.plugin.spark.authz.ranger.SparkRangerAdminPlugin._
 class SparkRangerAdminPluginSuite extends AnyFunSuite {
 // scalastyle:on
 
+  test("populate Ranger roles through the plugin facade") {
+    val user = UserGroupInformation.createRemoteUser("bob")
+    val resource = AccessResource(ObjectType.TABLE, defaultDb, "src", null)
+    val request = AccessRequest(resource, user, OperationType.QUERY, AccessType.SELECT)
+    assert(request.getUserRoles !== null)
+  }
+
   test("get filter expression") {
     val bob = UserGroupInformation.createRemoteUser("bob")
     val are = AccessResource(ObjectType.TABLE, defaultDb, "src", null)

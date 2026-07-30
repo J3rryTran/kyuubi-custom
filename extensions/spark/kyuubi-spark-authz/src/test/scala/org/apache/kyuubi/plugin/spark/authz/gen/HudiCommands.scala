@@ -237,7 +237,7 @@ object HudiCommands extends CommandSpecs[TableCommandSpec] {
 
   val DeleteHoodieTableCommand = {
     val cmd = "org.apache.spark.sql.hudi.command.DeleteHoodieTableCommand"
-    val actionTypeDesc = ActionTypeDesc(actionType = Some(UPDATE), comment = "Hudi")
+    val actionTypeDesc = ActionTypeDesc(actionType = Some(DELETE), comment = "Hudi")
     val tableDesc =
       TableDesc(
         "dft",

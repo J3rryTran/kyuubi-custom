@@ -17,19 +17,122 @@
 
 package org.apache.kyuubi.plugin.spark.authz.ranger
 
+import java.util.{Collection => JCollection, Set => JSet}
+import java.util.concurrent.atomic.AtomicBoolean
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 
 import org.apache.hadoop.util.ShutdownHookManager
-import org.apache.ranger.plugin.policyengine.RangerAccessRequest
+import org.apache.ranger.plugin.contextenricher.RangerUserStoreEnricher
+import org.apache.ranger.plugin.model.RangerServiceDef
+import org.apache.ranger.plugin.policyengine.{RangerAccessRequest, RangerAccessResult, RangerAccessResultProcessor}
 import org.apache.ranger.plugin.service.RangerBasePlugin
+import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
 import org.apache.kyuubi.plugin.spark.authz.AccessControlException
 
-object SparkRangerAdminPlugin extends RangerBasePlugin("spark", "sparkSql")
-  with RangerConfigProvider {
+object SparkRangerAdminPlugin extends RangerConfigProvider {
   final private val LOG = LoggerFactory.getLogger(getClass)
+
+  private case class PluginState(profile: RangerServiceProfile, plugin: RangerBasePlugin)
+
+  @volatile private var state: PluginState = _
+  private val shutdownHookRegistered = new AtomicBoolean(false)
+
+  def profile: RangerServiceProfile = Option(state)
+    .map(_.profile)
+    .getOrElse(SparkRangerServiceProfile)
+
+  override protected def rangerPlugin: RangerBasePlugin = ensureInitialized().plugin
+
+  def initialize(spark: SparkSession): Unit =
+    initialize(RangerServiceProfile(spark.sparkContext.getConf))
+
+  private def initialize(requestedProfile: RangerServiceProfile): Unit = synchronized {
+    Option(state) match {
+      case Some(existing) if existing.profile != requestedProfile =>
+        throw new IllegalStateException(
+          s"Ranger plugin is already initialized for service type " +
+            s"[${existing.profile.serviceType}] with a different configuration")
+      case Some(_) =>
+      case None =>
+        val plugin = new RangerBasePlugin(requestedProfile.serviceType, requestedProfile.appId)
+        plugin.init()
+        if (requestedProfile.serviceType == "starrocks") {
+          validateStarRocksServiceDef(plugin.getServiceDef)
+        }
+        state = PluginState(requestedProfile, plugin)
+        registerCleanupShutdownHook()
+    }
+  }
+
+  private def ensureInitialized(): PluginState = {
+    if (state == null) {
+      initialize(SparkRangerServiceProfile)
+    }
+    state
+  }
+
+  private def validateStarRocksServiceDef(serviceDef: RangerServiceDef): Unit = {
+    if (serviceDef == null || serviceDef.getName != "starrocks") {
+      throw new IllegalStateException(
+        "Ranger service must provide the StarRocks service definition in starrocks mode")
+    }
+    val resources = Option(serviceDef.getResources).toSeq.flatMap(_.asScala).map(_.getName).toSet
+    val accesses = Option(serviceDef.getAccessTypes).toSeq.flatMap(_.asScala).map(_.getName).toSet
+    val requiredResources = Set("catalog", "database", "table", "column", "view", "function")
+    val requiredAccesses = Set(
+      "select",
+      "usage",
+      "create database",
+      "create table",
+      "create view",
+      "create function",
+      "insert",
+      "update",
+      "delete",
+      "drop",
+      "alter")
+    val missingResources = requiredResources -- resources
+    val missingAccesses = requiredAccesses -- accesses
+    if (missingResources.nonEmpty || missingAccesses.nonEmpty) {
+      throw new IllegalStateException(
+        s"StarRocks Ranger service definition is incompatible; missing resources " +
+          s"[${missingResources.toSeq.sorted.mkString(",")}] and access types " +
+          s"[${missingAccesses.toSeq.sorted.mkString(",")}]")
+    }
+  }
+
+  def getServiceType: String = ensureInitialized().plugin.getServiceType
+  def getAppId: String = ensureInitialized().plugin.getAppId
+  def getServiceDef: RangerServiceDef = ensureInitialized().plugin.getServiceDef
+  private[ranger] def getServiceDefOption: Option[RangerServiceDef] =
+    Option(state).flatMap(current => Option(current.plugin.getServiceDef))
+  def getClusterName: String = ensureInitialized().plugin.getClusterName
+  def getUserStoreEnricher: RangerUserStoreEnricher =
+    ensureInitialized().plugin.getUserStoreEnricher
+  def getRolesFromUserAndGroups(user: String, groups: JSet[String]): JSet[String] =
+    ensureInitialized().plugin.getRolesFromUserAndGroups(user, groups)
+
+  def isAccessAllowed(request: RangerAccessRequest): RangerAccessResult =
+    ensureInitialized().plugin.isAccessAllowed(request)
+
+  def isAccessAllowed(
+      requests: JCollection[RangerAccessRequest],
+      processor: RangerAccessResultProcessor): JCollection[RangerAccessResult] =
+    ensureInitialized().plugin.isAccessAllowed(requests, processor)
+
+  def evalRowFilterPolicies(
+      request: RangerAccessRequest,
+      processor: RangerAccessResultProcessor): RangerAccessResult =
+    ensureInitialized().plugin.evalRowFilterPolicies(request, processor)
+
+  def evalDataMaskPolicies(
+      request: RangerAccessRequest,
+      processor: RangerAccessResultProcessor): RangerAccessResult =
+    ensureInitialized().plugin.evalDataMaskPolicies(request, processor)
 
   /**
    * For a Spark SQL query, it may contain 0 or more privilege objects to verify, e.g. a typical
@@ -60,28 +163,25 @@ object SparkRangerAdminPlugin extends RangerBasePlugin("spark", "sparkSql")
     s"ranger.plugin.$getServiceType.use.usergroups.from.userstore.enabled",
     false)
 
-  /**
-   * plugin initialization
-   * with cleanup shutdown hook registered
-   */
-  def initialize(): Unit = {
-    this.init()
-    registerCleanupShutdownHook(this)
+  private def registerCleanupShutdownHook(): Unit = {
+    if (shutdownHookRegistered.compareAndSet(false, true)) {
+      ShutdownHookManager.get().addShutdownHook(
+        () => cleanupCurrentPlugin(),
+        Integer.MAX_VALUE)
+    }
   }
 
-  /**
-   * register shutdown hook for plugin cleanup
-   */
-  private def registerCleanupShutdownHook(plugin: RangerBasePlugin): Unit = {
-    ShutdownHookManager.get().addShutdownHook(
-      () => {
-        if (plugin != null) {
-          LOG.info(s"clean up ranger plugin, appId: ${plugin.getAppId}")
-          plugin.cleanup()
-          plugin.getAuditProviderFactory.shutdown()
-        }
-      },
-      Integer.MAX_VALUE)
+  private def cleanupCurrentPlugin(): Unit = synchronized {
+    Option(state).foreach { current =>
+      LOG.info(s"clean up ranger plugin, appId: ${current.plugin.getAppId}")
+      current.plugin.cleanup()
+      current.plugin.getAuditProviderFactory.shutdown()
+    }
+  }
+
+  private[ranger] def resetForTesting(): Unit = synchronized {
+    cleanupCurrentPlugin()
+    state = null
   }
 
   def getFilterExpr(req: AccessRequest): Option[String] = {

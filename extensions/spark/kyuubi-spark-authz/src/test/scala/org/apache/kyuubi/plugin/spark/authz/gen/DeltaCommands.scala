@@ -25,7 +25,7 @@ object DeltaCommands extends CommandSpecs[TableCommandSpec] {
 
   val DeleteCommand = {
     val cmd = "org.apache.spark.sql.delta.commands.DeleteCommand"
-    val actionTypeDesc = ActionTypeDesc(actionType = Some(UPDATE), comment = "Delta")
+    val actionTypeDesc = ActionTypeDesc(actionType = Some(DELETE), comment = "Delta")
     val tableDesc = TableDesc(
       "target",
       classOf[SubqueryAliasTableExtractor],
@@ -37,13 +37,20 @@ object DeltaCommands extends CommandSpecs[TableCommandSpec] {
 
   val UpdateCommand = {
     val cmd = "org.apache.spark.sql.delta.commands.UpdateCommand"
-    DeleteCommand.copy(classname = cmd)
+    val actionTypeDesc = ActionTypeDesc(actionType = Some(UPDATE), comment = "Delta")
+    val tableDesc = TableDesc(
+      "target",
+      classOf[SubqueryAliasTableExtractor],
+      actionTypeDesc = Some(actionTypeDesc),
+      comment = "Delta")
+    val uriDescs = Seq(UriDesc("target", classOf[SubqueryAliasURIExtractor], comment = "Delta"))
+    TableCommandSpec(cmd, Seq(tableDesc), uriDescs = uriDescs)
   }
 
   val MergeIntoCommand = {
     val cmd = "org.apache.spark.sql.delta.commands.MergeIntoCommand"
     val queryDesc = QueryDesc("source", comment = "Delta")
-    DeleteCommand.copy(classname = cmd, queryDescs = Seq(queryDesc))
+    UpdateCommand.copy(classname = cmd, queryDescs = Seq(queryDesc))
   }
 
   val OptimizeTableCommand = {

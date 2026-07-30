@@ -25,7 +25,7 @@ object IcebergCommands extends CommandSpecs[TableCommandSpec] {
 
   val DeleteFromIcebergTable = {
     val cmd = "org.apache.spark.sql.catalyst.plans.logical.DeleteFromIcebergTable"
-    val actionTypeDesc = ActionTypeDesc(actionType = Some(UPDATE))
+    val actionTypeDesc = ActionTypeDesc(actionType = Some(DELETE))
     val tableDesc =
       TableDesc(
         "table",
@@ -37,7 +37,14 @@ object IcebergCommands extends CommandSpecs[TableCommandSpec] {
 
   val UpdateIcebergTable = {
     val cmd = "org.apache.spark.sql.catalyst.plans.logical.UpdateIcebergTable"
-    DeleteFromIcebergTable.copy(cmd)
+    val actionTypeDesc = ActionTypeDesc(actionType = Some(UPDATE))
+    val tableDesc =
+      TableDesc(
+        "table",
+        classOf[DataSourceV2RelationTableExtractor],
+        actionTypeDesc = Some(actionTypeDesc),
+        comment = "Iceberg")
+    TableCommandSpec(cmd, Seq(tableDesc))
   }
 
   val MergeIntoIcebergTable = {

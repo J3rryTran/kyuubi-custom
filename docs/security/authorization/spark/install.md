@@ -153,3 +153,55 @@ Add `org.apache.kyuubi.plugin.spark.authz.ranger.RangerSparkExtension` to the sp
 spark.sql.extensions=org.apache.kyuubi.plugin.spark.authz.ranger.RangerSparkExtension
 ```
 
+### Using a StarRocks Ranger Service
+
+The plugin uses the existing Spark/Hive-compatible Ranger behavior by default. To reuse a
+catalog-aware StarRocks service, select the StarRocks profile in the Spark configuration:
+
+```properties
+spark.kyuubi.authz.ranger.service.type=starrocks
+spark.kyuubi.authz.ranger.starrocks.default.catalog=default_catalog
+spark.kyuubi.authz.ranger.starrocks.catalog.mapping=iceberg_prod=lakehouse,spark_catalog=default_catalog
+```
+
+The default catalog is used only when Spark cannot supply a catalog. A named catalog that is not
+present in `catalog.mapping` is passed to Ranger unchanged.
+
+Create `ranger-starrocks-security.xml` in `$SPARK_HOME/conf`. It uses the same settings as
+`ranger-spark-security.xml`, under the `ranger.plugin.starrocks` namespace:
+
+```xml
+<configuration>
+    <property>
+        <name>ranger.plugin.starrocks.policy.rest.url</name>
+        <value>http://ranger-admin.org:6080</value>
+    </property>
+    <property>
+        <name>ranger.plugin.starrocks.service.name</name>
+        <value>an existing Ranger StarRocks service name</value>
+    </property>
+    <property>
+        <name>ranger.plugin.starrocks.policy.cache.dir</name>
+        <value>./a ranger StarRocks service name/policycache</value>
+    </property>
+    <property>
+        <name>ranger.plugin.starrocks.policy.source.impl</name>
+        <value>org.apache.ranger.admin.client.RangerAdminRESTClient</value>
+    </property>
+</configuration>
+```
+
+The Ranger service must use the StarRocks service definition and its hierarchy
+`catalog -> database -> table -> column`; `catalog` is mandatory. Views and functions are checked
+against the native `view` and `function` resources. The plugin validates the live service
+definition during startup and fails if the required resources or access types are missing.
+
+The optional single-call and Ranger UserStore settings also use this namespace:
+
+```properties
+ranger.plugin.starrocks.authorize.in.single.call=true
+ranger.plugin.starrocks.use.usergroups.from.userstore.enabled=true
+```
+
+StarRocks mode fails closed for Spark URI/path privileges, `ADD JAR`/`ADD FILE`, index operations,
+and materialized-view operations that cannot be represented by the supported privilege objects.

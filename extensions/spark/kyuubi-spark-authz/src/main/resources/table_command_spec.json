@@ -291,7 +291,7 @@
     "actionTypeDesc" : {
       "fieldName" : null,
       "fieldExtractor" : null,
-      "actionType" : "UPDATE",
+      "actionType" : "DELETE",
       "comment" : ""
     },
     "tableTypeDesc" : null,
@@ -1802,7 +1802,7 @@
     "actionTypeDesc" : {
       "fieldName" : null,
       "fieldExtractor" : null,
-      "actionType" : "UPDATE",
+      "actionType" : "DELETE",
       "comment" : ""
     },
     "tableTypeDesc" : null,
@@ -2169,7 +2169,7 @@
     "actionTypeDesc" : {
       "fieldName" : null,
       "fieldExtractor" : null,
-      "actionType" : "UPDATE",
+      "actionType" : "DELETE",
       "comment" : "Hudi"
     },
     "tableTypeDesc" : null,
@@ -2443,7 +2443,7 @@
     "actionTypeDesc" : {
       "fieldName" : null,
       "fieldExtractor" : null,
-      "actionType" : "UPDATE",
+      "actionType" : "DELETE",
       "comment" : "Delta"
     },
     "tableTypeDesc" : null,

@@ -300,7 +300,13 @@ object TableCommands extends CommandSpecs[TableCommandSpec] {
 
   val DeleteFromTable = {
     val cmd = "org.apache.spark.sql.catalyst.plans.logical.DeleteFromTable"
-    UpdateTable.copy(classname = cmd)
+    val actionTypeDesc = ActionTypeDesc(actionType = Some(DELETE))
+    val tableDesc =
+      TableDesc(
+        "table",
+        classOf[DataSourceV2RelationTableExtractor],
+        actionTypeDesc = Some(actionTypeDesc))
+    TableCommandSpec(cmd, Seq(tableDesc))
   }
 
   val OverwriteByExpression = {

@@ -23,7 +23,7 @@ object ObjectType extends Enumeration {
 
   type ObjectType = Value
 
-  val DATABASE, TABLE, VIEW, COLUMN, FUNCTION, INDEX, URI = Value
+  val CATALOG, DATABASE, TABLE, VIEW, COLUMN, FUNCTION, INDEX, URI = Value
 
   def apply(obj: PrivilegeObject, opType: OperationType): ObjectType = {
     obj.privilegeObjectType match {

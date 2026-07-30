@@ -18,11 +18,12 @@
 package org.apache.kyuubi.plugin.spark.authz.ranger
 
 import org.apache.hadoop.conf.Configuration
+import org.apache.ranger.plugin.service.RangerBasePlugin
 
 import org.apache.kyuubi.plugin.spark.authz.util.AuthZUtils.isRanger21orGreater
-import org.apache.kyuubi.util.reflect.ReflectUtils.invokeAs
-
 trait RangerConfigProvider {
+
+  protected def rangerPlugin: RangerBasePlugin
 
   /**
    * Get plugin config of different Ranger versions
@@ -34,13 +35,15 @@ trait RangerConfigProvider {
    *         org.apache.ranger.authorization.hadoop.config.RangerConfiguration
    *         for Ranger 2.0 and below
    */
-  val getRangerConf: Configuration = {
+  def getRangerConf: Configuration = {
     if (isRanger21orGreater) {
       // for Ranger 2.1+
-      invokeAs(this, "getConfig")
+      rangerPlugin.getConfig
     } else {
       // for Ranger 2.0 and below
-      invokeAs("org.apache.ranger.authorization.hadoop.config.RangerConfiguration", "getInstance")
+      org.apache.kyuubi.util.reflect.ReflectUtils.invokeAs(
+        "org.apache.ranger.authorization.hadoop.config.RangerConfiguration",
+        "getInstance")
     }
   }
 }
