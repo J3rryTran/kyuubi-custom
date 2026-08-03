@@ -15,9 +15,16 @@
  * limitations under the License.
  */
 
-package org.apache.kyuubi.service.authentication
+package org.apache.kyuubi.jdbc.hive.auth.oidc;
 
-object AuthMethods extends Enumeration {
-  type AuthMethod = Value
-  val NONE, LDAP, JDBC, CUSTOM, OIDC = Value
+/** Raised when the client-side OIDC token acquisition fails. */
+public class OidcAuthException extends RuntimeException {
+
+  public OidcAuthException(String message) {
+    super(message);
+  }
+
+  public OidcAuthException(String message, Throwable cause) {
+    super(message, cause);
+  }
 }

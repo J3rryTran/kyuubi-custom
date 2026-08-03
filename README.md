@@ -9,21 +9,21 @@ version 1.10.3
 > build/mvn clean install -DskipTests
 
 - Then, buil 2 option:
-    - Build binary:
+  - Build binary:
 
 > ./build/dist --tgz --web-ui --spark-provided --flink-provided --hive-provided
 
-- Build binary with specific version
+  - Build binary with specific version   
 > ./build/dist --tgz --web-ui --spark-provided --flink-provided --hive-provided \                                                                                                                                                   
--Dspark.version=<version_spark> \
--Dflink.version=<version_flink> \
--Dhive.version=<version_hive>
+    -Dspark.version=<version_spark> \ \
+    -Dflink.version=<version_flink> \   
+    -Dhive.version=<version_hive>
 
-- Build module:
+  - Build module:
 
-> build/mvn clean install -pl <module> -am -DskipTests -Dspotless.check.skip=true
+> build/mvn clean install -pl <name_module> -am -DskipTests -Dspotless.check.skip=true
 
-- Push to dockerhub:
+  - Push to dockerhub:
 > bin/docker-image-tool.sh -r <name_account> -i <name_repo_dockerhub> -t <tag> push
 
 ### The list of module:

@@ -162,6 +162,7 @@ Commands:
 Options:
   -f                    Dockerfile to build for JVM based Jobs. By default builds the Dockerfile shipped with Kyuubi.
   -r                    Repository address.
+  -i                    Image name. Defaults to "kyuubi".
   -t                    Tag to apply to the built image, or to identify the image to be pushed.
   -n                    Build docker image with --no-cache
   -u                    UID to use in the USER directive to set the user the main Kyuubi process runs as inside the
@@ -213,13 +214,14 @@ BUILD_PARAMS=
 KYUUBI_UID=
 CROSS_BUILD="false"
 SPARK_HOME_IN_DOCKER=
-while getopts f:r:t:Xnb:u:s:S: option
+while getopts f:r:t:i:Xnb:u:s:S: option
 do
  case "${option}"
  in
  f) BASEDOCKERFILE=$(resolve_file ${OPTARG});;
  r) REPO=${OPTARG};;
  t) TAG=${OPTARG};;
+ i) KYUUBI_IMAGE_NAME=${OPTARG};;
  n) NOCACHEARG="--no-cache";;
  b) BUILD_PARAMS=${BUILD_PARAMS}" --build-arg "${OPTARG};;
  X) CROSS_BUILD=1;;
