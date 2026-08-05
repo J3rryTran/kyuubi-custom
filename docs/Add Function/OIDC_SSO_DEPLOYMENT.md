@@ -179,3 +179,69 @@ These are equivalent triggers for the OIDC flow, chosen to minimize churn for ex
 - Driver: `kyuubi-hive-jdbc`, package `org.apache.kyuubi.jdbc.hive.auth.oidc` (JDK-only, no new
   runtime dependency), integrated in `KyuubiConnection.getHttpClient()` and reusing
   `HttpJwtAuthRequestInterceptor`.
+
+---
+
+## 7. Web UI SSO
+
+The Kyuubi Web UI ships a username/password dialog that posts HTTP Basic. Under
+`kyuubi.authentication=OIDC` that path is served by `DenyPasswordAuthenticationProvider`, so it can
+never succeed. The UI therefore performs its own **Authorization Code + PKCE** login and calls the
+REST API with `Authorization: Bearer <access_token>` instead.
+
+### 7.1 Server configuration
+
+Add these next to the JWT settings in `kyuubi-defaults.conf`:
+
+```properties
+# OIDC client the Web UI authenticates as. Browser-based, hence a PUBLIC client with no secret.
+kyuubi.authentication.oidc.ui.client.id     kyuubi-ui
+# Optional; defaults to "openid profile email".
+#kyuubi.authentication.oidc.ui.scope        openid profile email
+```
+
+The issuer is reused from `kyuubi.authentication.jwt.issuer` — it is not configured twice.
+
+The UI reads these from `GET /api/v1/authentication/config`, which is intentionally **not**
+authenticated (the browser has no credential before signing in). It returns only public discovery
+inputs — `authType`, `oidcEnabled`, `issuer`, `clientId`, `scope` — and never a secret. When
+`kyuubi.authentication` is not `OIDC`, the endpoint reports `oidcEnabled: false` and the UI keeps
+the original username/password dialog.
+
+### 7.2 Keycloak client for the Web UI
+
+Register a **separate** client from the JDBC one, because the redirect URIs differ:
+
+| Setting | Value |
+|---------|-------|
+| Client ID | `kyuubi-ui` |
+| Client authentication | **Off** (public client) |
+| Standard flow | **On** (Direct access grants off) |
+| Valid redirect URIs | `http://<kyuubi-host>:<rest-port>/ui/callback` |
+| Valid post logout redirect URIs | `http://<kyuubi-host>:<rest-port>/ui` |
+| **Web origins** | `http://<kyuubi-host>:<rest-port>` |
+
+`Web origins` is mandatory: the browser calls Keycloak's token endpoint directly, so without the
+matching CORS header the exchange fails even though the login itself succeeded.
+
+Add an **audience mapper** on this client emitting the same `aud` the server expects
+(`kyuubi.authentication.jwt.audience`), otherwise every REST call is rejected as a wrong audience.
+
+### 7.3 Notes and constraints
+
+- `crypto.subtle` is unavailable outside secure contexts, so on a plain-HTTP UI the S256 challenge is
+  computed by a bundled SHA-256 (`src/utils/pkce.ts`). Behaviour is identical either way, but serving
+  the UI over HTTPS remains the recommendation — bearer tokens in plaintext are a credential leak.
+- A self-signed Keycloak certificate must be trusted by the **browser** for the UI flow (this is
+  separate from the server-side truststore used for JWKS). Otherwise discovery fails silently as a
+  network error.
+- Signing in redirects to the provider immediately — there is no intermediate "continue with SSO"
+  prompt. The same happens when a session dies mid-use, so an expired token sends the user straight
+  back to Keycloak; the page being viewed is restored afterwards.
+- Tokens are renewed silently via `refresh_token` shortly before expiry, and once more on a 401/403
+  before that redirect is triggered.
+- A dialog appears only when the redirect itself could not be started (provider unreachable, issuer
+  or client id unset), reporting the reason rather than leaving a blank page. Concurrent failed
+  requests collapse into a single redirect.
+- "Sign out" clears local state and, when the provider advertises `end_session_endpoint`, ends the
+  Keycloak session too.

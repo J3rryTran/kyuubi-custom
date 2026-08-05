@@ -24,7 +24,15 @@
     <div class="dialog-header">
       <img class="logo" src="@/assets/images/kyuubi-logo.svg" />
     </div>
-    <el-form class="login-form">
+    <!--
+      Under OIDC this dialog is only reached when the redirect to the provider
+      itself failed, so it reports the reason instead of asking for a password.
+    -->
+    <template v-if="oidcEnabled">
+      <p class="sso-hint">Could not reach the single sign-on provider.</p>
+      <p v-if="loginError" class="login-error">{{ loginError }}</p>
+    </template>
+    <el-form v-else class="login-form">
       <el-form-item>
         <el-input v-model="username" placeholder="Username" />
       </el-form-item>
@@ -38,6 +46,14 @@
     <template #footer>
       <div class="dialog-footer">
         <el-button
+          v-if="oidcEnabled"
+          type="primary"
+          :loading="redirecting"
+          @click="startOidcLogin"
+          >Try again</el-button
+        >
+        <el-button
+          v-else
           type="primary"
           :disabled="isLoginDisabled"
           @click="handleLogin"
@@ -57,6 +73,8 @@
   const username = ref('')
   const password = ref('')
   const loginError = ref('')
+  const oidcEnabled = ref(false)
+  const redirecting = ref(false)
 
   const isLoginDisabled = computed(() => {
     return (
@@ -73,9 +91,34 @@
     }
   }
 
-  onMounted(() => {
-    window.addEventListener('auth-required', () => {
+  /**
+   * Leave for the provider straight away — no intermediate prompt. The dialog is
+   * only opened if the redirect could not be started, which would otherwise leave
+   * the user on a blank page with no way to see why.
+   */
+  const startOidcLogin = async () => {
+    loginError.value = ''
+    redirecting.value = true
+    try {
+      await authStore.oidcLogin()
+      dialogVisible.value = false
+    } catch (error) {
+      loginError.value = (error as Error).message
       dialogVisible.value = true
+    } finally {
+      redirecting.value = false
+    }
+  }
+
+  onMounted(async () => {
+    const config = await authStore.loadAuthConfig()
+    oidcEnabled.value = !!config?.oidcEnabled
+    window.addEventListener('auth-required', () => {
+      if (oidcEnabled.value) {
+        startOidcLogin()
+      } else {
+        dialogVisible.value = true
+      }
     })
   })
 </script>
@@ -96,6 +139,11 @@
 
   .login-form {
     margin-bottom: 20px;
+  }
+
+  .sso-hint {
+    text-align: center;
+    margin-bottom: 10px;
   }
 
   .login-error {

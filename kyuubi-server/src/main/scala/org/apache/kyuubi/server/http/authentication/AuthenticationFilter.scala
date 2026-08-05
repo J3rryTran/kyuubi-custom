@@ -126,6 +126,14 @@ class AuthenticationFilter(conf: KyuubiConf) extends Filter with Logging {
     val httpRequest = request.asInstanceOf[HttpServletRequest]
     val httpResponse = response.asInstanceOf[HttpServletResponse]
 
+    // The Web UI must be able to learn how to authenticate before it has any
+    // credential, so this endpoint is served without authentication. It only
+    // returns public OIDC discovery inputs.
+    if (UNAUTHENTICATED_PATHS.contains(httpRequest.getRequestURI)) {
+      doFilter(filterChain, httpRequest, httpResponse)
+      return
+    }
+
     val authorization = httpRequest.getHeader(AUTHORIZATION_HEADER)
     val matchedHandler = getMatchedHandler(authorization).orNull
     HTTP_CLIENT_IP_ADDRESS.set(httpRequest.getRemoteAddr)
@@ -190,6 +198,10 @@ class AuthenticationFilter(conf: KyuubiConf) extends Filter with Logging {
 }
 
 object AuthenticationFilter {
+
+  /** Request URIs served without authentication; they must never expose secrets. */
+  final val UNAUTHENTICATED_PATHS: Set[String] = Set("/api/v1/authentication/config")
+
   final val HTTP_CLIENT_IP_ADDRESS = new ThreadLocal[String]() {
     override protected def initialValue: String = null
   }

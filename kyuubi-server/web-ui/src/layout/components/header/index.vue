@@ -88,10 +88,8 @@
 
   const authStore = useAuthStore()
   const handleLogout = () => {
-    logout()
-  }
-  const logout = () => {
-    authStore.clearUser()
+    // Also ends the provider session when signed in through OIDC.
+    authStore.logout()
   }
 
   const showLoginModal = () => {

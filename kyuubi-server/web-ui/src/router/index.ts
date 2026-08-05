@@ -31,6 +31,12 @@ const routes = [
     }
   },
   {
+    // OIDC redirect target; outside the layout so it renders before authentication.
+    path: '/callback',
+    name: 'callback',
+    component: () => import('@/views/callback/index.vue')
+  },
+  {
     path: '/layout',
     name: 'layout',
     component: () => import('@/layout/index.vue'),

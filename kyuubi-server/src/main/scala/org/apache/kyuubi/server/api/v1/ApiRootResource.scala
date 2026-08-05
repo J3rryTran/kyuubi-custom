@@ -32,6 +32,8 @@ import org.apache.kyuubi.client.api.v1.dto._
 import org.apache.kyuubi.config.KyuubiConf._
 import org.apache.kyuubi.server.KyuubiRestFrontendService
 import org.apache.kyuubi.server.api.{ApiRequestContext, EngineUIProxyServlet, FrontendServiceContext, OpenAPIConfig}
+import org.apache.kyuubi.server.api.v1.ApiRootResource.{JWT_ISSUER, OIDC_UI_CLIENT_ID, OIDC_UI_SCOPE}
+import org.apache.kyuubi.service.authentication.AuthTypes
 
 @Path("/v1")
 private[v1] class ApiRootResource extends ApiRequestContext {
@@ -49,6 +51,31 @@ private[v1] class ApiRootResource extends ApiRequestContext {
   @Path("ping")
   @Produces(Array(MediaType.TEXT_PLAIN))
   def ping(): String = "pong"
+
+  @ApiResponse(
+    responseCode = "200",
+    content = Array(new Content(mediaType = MediaType.APPLICATION_JSON)),
+    description = "Get the authentication configuration the Web UI should use.")
+  @GET
+  @Path("authentication/config")
+  @Produces(Array(MediaType.APPLICATION_JSON))
+  def authenticationConfig(): Map[String, Any] = {
+    val conf = fe.getConf
+    val authTypes = conf.get(AUTHENTICATION_METHOD)
+    val oidcEnabled = authTypes.exists(_.equalsIgnoreCase(AuthTypes.OIDC.toString))
+    val base = Map[String, Any](
+      "authType" -> authTypes.headOption.getOrElse("NONE"),
+      "oidcEnabled" -> oidcEnabled)
+    if (!oidcEnabled) {
+      base
+    } else {
+      // Only public discovery inputs are exposed here; never any secret.
+      base ++ Map[String, Any](
+        "issuer" -> conf.getOption(JWT_ISSUER).orNull,
+        "clientId" -> conf.getOption(OIDC_UI_CLIENT_ID).orNull,
+        "scope" -> conf.getOption(OIDC_UI_SCOPE).getOrElse("openid profile email"))
+    }
+  }
 
   @Path("sessions")
   def sessions: Class[SessionsResource] = classOf[SessionsResource]
@@ -73,6 +100,16 @@ private[v1] class ApiRootResource extends ApiRequestContext {
 }
 
 private[server] object ApiRootResource {
+
+  /** Set by the OIDC auth extension; re-read here to tell the Web UI which issuer to use. */
+  private[v1] val JWT_ISSUER = "kyuubi.authentication.jwt.issuer"
+
+  /**
+   * The OIDC client the Web UI authenticates as. It is a browser-based public client,
+   * so it is registered separately from the JDBC one and never carries a secret.
+   */
+  private[v1] val OIDC_UI_CLIENT_ID = "kyuubi.authentication.oidc.ui.client.id"
+  private[v1] val OIDC_UI_SCOPE = "kyuubi.authentication.oidc.ui.scope"
 
   def getServletHandler(fe: KyuubiRestFrontendService): ServletContextHandler = {
     val openapiConf: ResourceConfig = new OpenAPIConfig

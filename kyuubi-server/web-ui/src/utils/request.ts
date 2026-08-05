@@ -26,11 +26,16 @@ const service = axios.create({
 
 // request interceptor
 service.interceptors.request.use(
-  (config) => {
+  async (config) => {
     // do something before request is sent
     const authStore = useAuthStore()
     if (authStore.isAuthenticated) {
-      config.headers.Authorization = authStore.authToken
+      // Renew a bearer token that is expired or close to it, so the request below
+      // is not spent just to discover the token went stale.
+      await authStore.refreshIfNeeded()
+      if (authStore.isAuthenticated) {
+        config.headers.Authorization = authStore.authToken
+      }
     }
     return config
   },
@@ -57,10 +62,23 @@ service.interceptors.response.use(
     }
     return response.data
   },
-  (error) => {
+  async (error) => {
     // for debug
     // do something when error
-    if (error.response && error.response.status === 401) {
+    const status = error.response?.status
+    // 403 is what the server returns when a bearer token is rejected, e.g. expired.
+    if (status === 401 || status === 403) {
+      const authStore = useAuthStore()
+      const config = error.config
+      // Give a stale bearer token exactly one chance to be renewed silently.
+      if (
+        config &&
+        !config.__authRetried &&
+        (await authStore.refreshIfNeeded(true))
+      ) {
+        config.__authRetried = true
+        return service(config)
+      }
       window.dispatchEvent(new CustomEvent('auth-required'))
     }
     return Promise.reject(error)
