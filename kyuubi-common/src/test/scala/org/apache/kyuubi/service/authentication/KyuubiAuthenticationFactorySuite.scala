@@ -58,7 +58,7 @@ class KyuubiAuthenticationFactorySuite extends KyuubiFunSuite {
     val conf = KyuubiConf().set(KyuubiConf.AUTHENTICATION_METHOD, Seq("INVALID"))
     interceptEquals[IllegalArgumentException] { new KyuubiAuthenticationFactory(conf) }(
       "The value of kyuubi.authentication should be one of" +
-        " NOSASL, NONE, LDAP, JDBC, KERBEROS, CUSTOM, but was INVALID")
+        " NOSASL, NONE, LDAP, JDBC, KERBEROS, CUSTOM, OIDC, but was INVALID")
   }
 
   test("AuthType LDAP") {

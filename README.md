@@ -21,25 +21,22 @@ To build only a specific module and its dependencies:
   -DskipTests \
   -Dspotless.check.skip=true
 ```
+Then generated archive has a name similar to:
+
+```text
+apache-kyuubi-1.10.3-bin-<custom-name-option>.tgz
+```
 
 ### 2. Create a binary package
 
 Create a runnable binary package that includes the Kyuubi Web UI and uses external Spark, Flink, and Hive installations:
 
 ```bash
-./build/dist \
-  --name <custom-name-option> \
-  --tgz \
-  --web-ui \
-  --spark-provided \
-  --flink-provided \
-  --hive-provided
+./build/dist --name <custom-name-option> --tgz --web-ui --spark-provided --flink-provided --hive-provided
 ```
-
-The generated archive has a name similar to:
-
-```text
-apache-kyuubi-1.10.3-bin-<custom-name-option>.tgz
+If specfic version spark, flink, and hive use:
+```bash
+./build/dist --name <custom-name-option> --tgz --web-ui --spark-provided --flink-provided --hive-provided -Dspark.version=3.5.5 -Dhive.version=3.1.3
 ```
 
 Extract the archive and use the packaged `bin/docker-image-tool.sh` for the Docker steps:
@@ -70,13 +67,7 @@ The following command creates:
 Use `-s` when Spark is installed locally and should be copied into the image. If the base image already contains Spark at `/opt/spark`, use `-S /opt/spark`:
 
 ```bash
-./bin/docker-image-tool.sh \
-  -r <name_repo_docker> \
-  -i kyuubi-custom \
-  -t <tag> \
-  -S /opt/spark \
-  -b BASE_IMAGE=eclipse-temurin:17-jdk-focal \
-  build
+./bin/docker-image-tool.sh -r <name_repo_docker> -i kyuubi-custom -t <tag> -S /opt/spark -b BASE_IMAGE=eclipse-temurin:17-jdk-focal build
 ```
 
 ### 4. Push the Docker image
@@ -148,6 +139,12 @@ After logging in with `docker login`, push the image with:
   -i kyuubi-custom \
   -t 1.10.3-custom_version \
   push
+```
+
+Test in localhost:
+
+```bash
+docker run --rm -p <portA>:<portB> IMAGES
 ```
 
 ### The list of module added:

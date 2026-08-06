@@ -20,11 +20,14 @@ package org.apache.kyuubi.server.api
 import org.glassfish.jersey.media.multipart.MultiPartFeature
 import org.glassfish.jersey.server.ResourceConfig
 
-import org.apache.kyuubi.server.api.v1.KyuubiOpenApiResource
+import org.apache.kyuubi.server.api.v1.{KyuubiOpenApiResource, NotebookExceptionMapper}
 
 class OpenAPIConfig extends ResourceConfig {
   packages("org.apache.kyuubi.server.api.v1")
   register(classOf[KyuubiOpenApiResource])
+  // Registered ahead of RestExceptionMapper so notebook errors keep their documented envelope
+  // instead of collapsing into the generic 500 shape.
+  register(classOf[NotebookExceptionMapper])
   register(classOf[KyuubiScalaObjectMapper])
   register(classOf[RestExceptionMapper])
   register(classOf[MultiPartFeature])

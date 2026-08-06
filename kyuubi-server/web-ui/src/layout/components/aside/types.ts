@@ -52,5 +52,10 @@ export const MENUS = [
     label: 'SQL Editor',
     icon: 'Cpu',
     router: '/editor'
+  },
+  {
+    label: 'Notebook',
+    icon: 'Notebook',
+    router: '/notebook'
   }
 ]

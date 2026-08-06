@@ -395,11 +395,20 @@ if [[ "$HIVE_PROVIDED" != "true" ]]; then
   cp -r "$HIVE_BUILTIN" "$DISTDIR/externals/"
 fi
 
-# Copy license files
-if [[ -f $"$KYUUBI_HOME/LICENSE-binary" ]]; then
+# Copy license files.
+# The -binary variants only exist in an Apache release build. This fork does not carry them, and
+# without a fallback the distribution ends up with no LICENSE and no NOTICE at all, which makes
+# `docker/Dockerfile` fail on its `COPY LICENSE NOTICE RELEASE` line.
+if [[ -f "$KYUUBI_HOME/LICENSE-binary" ]]; then
   cp "$KYUUBI_HOME/LICENSE-binary" "$DISTDIR/LICENSE"
   cp -r "$KYUUBI_HOME/licenses-binary" "$DISTDIR/licenses"
   cp "$KYUUBI_HOME/NOTICE-binary" "$DISTDIR/NOTICE"
+else
+  cp "$KYUUBI_HOME/LICENSE" "$DISTDIR/LICENSE"
+  cp "$KYUUBI_HOME/NOTICE" "$DISTDIR/NOTICE"
+  if [[ -d "$KYUUBI_HOME/licenses" ]]; then
+    cp -r "$KYUUBI_HOME/licenses" "$DISTDIR/licenses"
+  fi
 fi
 
 cp -r "$KYUUBI_HOME/bin" "$DISTDIR"

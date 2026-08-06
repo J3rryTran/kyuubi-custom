@@ -116,6 +116,12 @@
     <properties>
         <java.version>8</java.version>
         <maven.version>3.9.11</maven.version>
+        <!--
+          scala-maven-plugin still adds source roots the way Maven 4 deprecates, so every module
+          logs the same warning. Silencing it here keeps real warnings visible; drop this once the
+          plugin is upgraded.
+        -->
+        <maven.project.sourceRoots.warningsDisabled>true</maven.project.sourceRoots.warningsDisabled>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <scala.version>2.12.19</scala.version>

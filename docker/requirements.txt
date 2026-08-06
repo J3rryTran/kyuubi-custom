@@ -1,0 +1,25 @@
+# Packages baked into the Kyuubi image and shared by every notebook environment.
+#
+# They are installed into the system interpreter, and notebook environments are created with
+# --system-site-packages, so a user sees them without downloading anything. A user can still
+# install a different version of the same distribution: a package installed into their own
+# environment takes precedence over the one from the image.
+#
+# Two consequences worth knowing before editing this file:
+#   - Everything here is in the image for every user, so it costs image size once and disk never.
+#     A package a user installs themselves costs disk in their environment revision instead.
+#   - A package listed here cannot be uninstalled by a user; the server refuses the request
+#     rather than pretending to remove something that is still importable.
+#
+# Versions are left to pip so the file does not go stale, and the image tag is what pins them.
+# Pin explicitly here if you need the same versions across rebuilds.
+
+pandas
+numpy
+
+# Frequently wanted, but each adds meaningfully to the image; enable what you actually use.
+# pyarrow          # ~100 MB, needed for Spark Arrow interchange
+# matplotlib       # ~40 MB, plotting; renders through _repr_png_
+# scipy            # ~40 MB
+# scikit-learn     # ~30 MB, pulls scipy
+# requests

@@ -49,10 +49,17 @@ RUN set -ex && \
     sed -i 's/http:\/\/deb.\(.*\)/https:\/\/deb.\1/g' /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y bash tini libc6 libpam-modules krb5-user libnss3 procps && \
+    apt-get install -y --no-install-recommends python3 python3-pip python3-venv && \
     ln -snf /bin/bash /bin/sh && \
     useradd -u ${kyuubi_uid} -g root kyuubi -d /home/kyuubi -m && \
     mkdir -p ${KYUUBI_HOME} ${KYUUBI_LOG_DIR} ${KYUUBI_PID_DIR} ${KYUUBI_WORK_DIR_ROOT} && \
     rm -rf /var/cache/apt/*
+
+# Packages every notebook environment can see without downloading. Installed into the system
+# interpreter, which notebook environments reach through --system-site-packages.
+COPY docker/requirements.txt /tmp/notebook-requirements.txt
+RUN pip3 install --no-cache-dir -r /tmp/notebook-requirements.txt && \
+    rm -f /tmp/notebook-requirements.txt
 
 COPY LICENSE ${KYUUBI_HOME}/
 COPY bin ${KYUUBI_HOME}/bin

@@ -21,6 +21,7 @@ import managementRoutes from './management'
 import detailRoutes from './detail'
 import swaggerRoutes from './swagger'
 import editorRoutes from './editor'
+import notebookRoutes from './notebook'
 
 const routes = [
   {
@@ -46,7 +47,8 @@ const routes = [
       ...managementRoutes,
       ...detailRoutes,
       ...swaggerRoutes,
-      ...editorRoutes
+      ...editorRoutes,
+      ...notebookRoutes
     ]
   }
 ]

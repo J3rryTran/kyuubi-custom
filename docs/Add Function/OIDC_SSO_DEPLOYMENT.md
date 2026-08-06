@@ -39,18 +39,14 @@ Discovery document (used by both server and driver):
 ## 2. Server configuration (`kyuubi-defaults.conf`)
 
 ```properties
-# 1. Enable the HTTP thrift transport (Bearer auth requires it) alongside anything else you run.
-kyuubi.frontend.protocols                 THRIFT_BINARY,THRIFT_HTTP,REST
+# 1. Enable the HTTP thrift transport (Bearer auth requires it) alongside the REST frontend.
+kyuubi.frontend.protocols                 THRIFT_HTTP,REST
 
-# 2. Route bearer auth to the JWT plugin. The bearer handler is only active under CUSTOM.
-kyuubi.authentication                     CUSTOM
-kyuubi.authentication.custom.bearer.class org.apache.kyuubi.auth.oidc.JwtTokenAuthenticationProvider
+# 2. Enable the built-in OIDC authentication mode.
+#    Kyuubi automatically wires the bundled JWT bearer and deny-password providers.
+kyuubi.authentication                     OIDC
 
-# 3. (Optional) If THRIFT_BINARY stays enabled, CUSTOM also needs a Passwd provider for that path.
-#    Use the bundled deny-all to force clients onto OIDC, or wire your own.
-kyuubi.authentication.custom.class        org.apache.kyuubi.auth.oidc.DenyPasswordAuthenticationProvider
-
-# 4. JWT validation settings (read by the plugin).
+# 3. JWT validation settings (read by the bundled OIDC provider).
 kyuubi.authentication.jwt.issuer          https://keycloak.example.com/realms/prod
 kyuubi.authentication.jwt.audience        kyuubi-jdbc          # accepted aud (comma-separated); usually the client id
 #kyuubi.authentication.jwt.jwks.url       https://keycloak.example.com/realms/prod/protocol/openid-connect/certs  # optional; auto-discovered from issuer
@@ -59,10 +55,10 @@ kyuubi.authentication.jwt.allowed.algorithms RS256              # allow-list; al
 #kyuubi.authentication.jwt.expected.typ   at+jwt                # optional: require JOSE typ, rejecting ID tokens (Keycloak access tokens: "Bearer")
 kyuubi.authentication.jwt.clock.skew.seconds 30
 
-# 5. Fat tokens: Keycloak access tokens with many roles/groups can exceed the 6 KB header default.
+# 4. Fat tokens: Keycloak access tokens with many roles/groups can exceed the 6 KB header default.
 kyuubi.frontend.thrift.http.request.header.size 32768
 
-# 6. ALWAYS use TLS in production — a bearer token over plaintext HTTP is a credential leak.
+# 5. ALWAYS use TLS in production — a bearer token over plaintext HTTP is a credential leak.
 #    (configure the frontend SSL keystore per your Kyuubi security setup)
 ```
 

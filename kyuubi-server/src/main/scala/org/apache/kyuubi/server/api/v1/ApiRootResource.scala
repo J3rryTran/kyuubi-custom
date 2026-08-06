@@ -89,6 +89,45 @@ private[v1] class ApiRootResource extends ApiRequestContext {
   @Path("admin")
   def admin: Class[AdminResource] = classOf[AdminResource]
 
+  @Path("notebook-folders")
+  def notebookFolders: Class[NotebookFoldersResource] = classOf[NotebookFoldersResource]
+
+  @Path("notebooks")
+  def notebooks: Class[NotebooksResource] = classOf[NotebooksResource]
+
+  // Collection-level actions are siblings of "notebooks", not children, so they need their own
+  // locators rather than a path inside NotebooksResource.
+  @Path("notebooks:import")
+  def notebooksImport: Class[NotebookImportResource] = classOf[NotebookImportResource]
+
+  @Path("notebooks:search")
+  def notebooksSearch: Class[NotebookSearchResource] = classOf[NotebookSearchResource]
+
+  @Path("me")
+  def currentUser: Class[CurrentUserResource] = classOf[CurrentUserResource]
+
+  @Path("notebook-status")
+  def notebookStatus: Class[NotebookStatusResource] = classOf[NotebookStatusResource]
+
+  @Path("runtime-specs")
+  def runtimeSpecs: Class[RuntimeSpecsResource] = classOf[RuntimeSpecsResource]
+
+  @Path("notebook-sessions")
+  def notebookSessions: Class[NotebookSessionsResource] = classOf[NotebookSessionsResource]
+
+  @Path("notebook-runtimes")
+  def notebookRuntimes: Class[NotebookRuntimesResource] = classOf[NotebookRuntimesResource]
+
+  @Path("executions")
+  def executions: Class[ExecutionsResource] = classOf[ExecutionsResource]
+
+  @Path("python-environments")
+  def pythonEnvironments: Class[PythonEnvironmentsResource] = classOf[PythonEnvironmentsResource]
+
+  @Path("python-package-operations")
+  def pythonPackageOperations: Class[PythonPackageOperationsResource] =
+    classOf[PythonPackageOperationsResource]
+
   @GET
   @Path("exception")
   @Produces(Array(MediaType.TEXT_PLAIN))

@@ -1,0 +1,850 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+openapi: 3.0.3
+info:
+  title: Kyuubi Notebook API
+  version: "1.0.0"
+  description: >
+    Notebook subsystem of Apache Kyuubi. Covers the endpoints implemented in PR 1: folders,
+    notebooks, cells, revisions, permissions, schedules, import, export, search and the service
+    endpoints. Runtime, execution and Python-environment endpoints are specified in API.md and
+    are added to this document when they are implemented.
+
+    Authentication reuses the Kyuubi REST frontend; under kyuubi.authentication=OIDC that is an
+    OAuth2 bearer token. There is no notebook-specific login, and no request body carries owner
+    or audit fields - they are derived from the authenticated caller.
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Notebook
+
+paths:
+  /notebook-folders:
+    post:
+      tags: [Notebook]
+      summary: Create a folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFolderRequest"
+      responses:
+        "200":
+          description: The created folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotebookFolder"
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Notebook]
+      summary: List the caller's folders
+      parameters:
+        - name: parentId
+          in: query
+          required: false
+          schema: { type: string }
+          description: Empty string lists roots; omitted lists all folders.
+      responses:
+        "200":
+          description: Folders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotebookFolder" }
+
+  /notebook-folders/{folderId}:
+    parameters:
+      - name: folderId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Notebook]
+      summary: Get a folder
+      responses:
+        "200":
+          description: The folder
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookFolder" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Notebook]
+      summary: Rename or reparent a folder, rewriting descendant paths
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateFolderRequest" }
+      responses:
+        "200":
+          description: The updated folder
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookFolder" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Notebook]
+      summary: Soft-delete a folder and its subtree
+      parameters:
+        - name: version
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /notebooks:
+    post:
+      tags: [Notebook]
+      summary: Create a notebook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateNotebookRequest" }
+      responses:
+        "200":
+          description: The created notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+        "409": { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Notebook]
+      summary: List notebooks the caller may read
+      parameters:
+        - { name: owner, in: query, schema: { type: string } }
+        - { name: folderId, in: query, schema: { type: string } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: A page of notebooks
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookPage" }
+
+  /notebooks/{notebookId}:
+    parameters:
+      - name: notebookId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Notebook]
+      summary: Get a notebook
+      parameters:
+        - name: includeCells
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: The notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Notebook]
+      summary: Update notebook attributes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotebookRequest" }
+      responses:
+        "200":
+          description: The updated notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Notebook]
+      summary: Soft-delete a notebook, dropping its grants and schedule
+      parameters:
+        - name: version
+          in: query
+          schema: { type: integer, format: int64 }
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /notebooks/{notebookId}:clone:
+    post:
+      tags: [Notebook]
+      summary: Copy a notebook; the caller owns the copy
+      parameters:
+        - { name: notebookId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                folderId: { type: string, nullable: true }
+      responses:
+        "200":
+          description: The new notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+
+  /notebooks/{notebookId}:move:
+    post:
+      tags: [Notebook]
+      summary: Move or rename a notebook within the caller's own space
+      parameters:
+        - { name: notebookId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folderId: { type: string, nullable: true }
+                name: { type: string }
+                version: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The moved notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /notebooks/{notebookId}:export:
+    get:
+      tags: [Notebook]
+      summary: Export a notebook document; outputs are never included
+      parameters:
+        - { name: notebookId, in: path, required: true, schema: { type: string } }
+        - name: format
+          in: query
+          schema: { type: string, enum: [KYUUBI, IPYNB], default: KYUUBI }
+      responses:
+        "200":
+          description: The document
+          content:
+            application/json:
+              schema: { type: object }
+
+  /notebooks:import:
+    post:
+      tags: [Notebook]
+      summary: Import a document; ids are regenerated and the caller becomes the owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                format: { type: string, enum: [KYUUBI, IPYNB] }
+                name: { type: string }
+                folderId: { type: string, nullable: true }
+                content: { type: string, description: The document as raw JSON text }
+      responses:
+        "200":
+          description: The imported notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /notebooks:search:
+    get:
+      tags: [Notebook]
+      summary: Search names, descriptions and cell sources within authorized notebooks
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: folderId, in: query, schema: { type: string } }
+        - name: language
+          in: query
+          schema: { type: string, enum: [SQL, PYTHON, MARKDOWN] }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: A page of notebooks
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookPage" }
+
+  /notebooks/{notebookId}/cells:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Notebook]
+      summary: List cells in order
+      responses:
+        "200":
+          description: Cells
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotebookCell" }
+    post:
+      tags: [Notebook]
+      summary: Insert a cell, shifting later positions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCellRequest" }
+      responses:
+        "200":
+          description: The created cell
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookCell" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /notebooks/{notebookId}/cells/{cellId}:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+      - { name: cellId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Notebook]
+      summary: Get a cell
+      responses:
+        "200":
+          description: The cell
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookCell" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Notebook]
+      summary: Update a cell; running and finished executions keep their own snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCellRequest" }
+      responses:
+        "200":
+          description: The updated cell
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookCell" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Notebook]
+      summary: Delete a cell, closing the gap in positions
+      responses:
+        "204": { description: Deleted }
+
+  /notebooks/{notebookId}/cells/{cellId}/config:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+      - { name: cellId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Notebook]
+      summary: Get cell configuration
+      responses:
+        "200":
+          description: Configuration
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: { type: string } }
+    patch:
+      tags: [Notebook]
+      summary: Replace cell configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                configuration: { type: object, additionalProperties: { type: string } }
+                version: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The updated cell
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookCell" }
+
+  /notebooks/{notebookId}/cells:reorder:
+    put:
+      tags: [Notebook]
+      summary: Apply a complete cell ordering
+      parameters:
+        - { name: notebookId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cellIds]
+              properties:
+                cellIds:
+                  type: array
+                  items: { type: string }
+                  description: Every cell of the notebook, exactly once.
+                version: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The reordered cells
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotebookCell" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /notebooks/{notebookId}/revisions:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Notebook]
+      summary: List revisions, newest first
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: A page of revisions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/NotebookRevision" }
+                  nextCursor: { type: string, nullable: true }
+                  hasMore: { type: boolean }
+    post:
+      tags: [Notebook]
+      summary: Create a protected checkpoint
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: The created revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookRevision" }
+
+  /notebooks/{notebookId}/revisions/{revisionNumber}:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+      - { name: revisionNumber, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      tags: [Notebook]
+      summary: Get a revision including its document
+      responses:
+        "200":
+          description: The revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookRevision" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Notebook]
+      summary: Delete an unprotected revision
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /notebooks/{notebookId}/revisions/{revisionNumber}:restore:
+    post:
+      tags: [Notebook]
+      summary: Restore content, appending a new protected revision
+      parameters:
+        - { name: notebookId, in: path, required: true, schema: { type: string } }
+        - { name: revisionNumber, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: The restored notebook
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notebook" }
+
+  /notebooks/{notebookId}/permissions:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Notebook]
+      summary: List grants
+      responses:
+        "200":
+          description: Grants
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotebookPermission" }
+    put:
+      tags: [Notebook]
+      summary: Replace all grants; owner only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                permissions:
+                  type: array
+                  items:
+                    type: object
+                    required: [principalId, role]
+                    properties:
+                      principalType: { type: string, enum: [USER], default: USER }
+                      principalId: { type: string }
+                      role: { type: string, enum: [EDITOR, VIEWER] }
+      responses:
+        "200":
+          description: The stored grants
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotebookPermission" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /notebooks/{notebookId}/schedule:
+    parameters:
+      - { name: notebookId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Notebook]
+      summary: Get the schedule
+      responses:
+        "200":
+          description: The schedule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookSchedule" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Notebook]
+      summary: Create or replace the schedule; owner only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cronExpression, timezone]
+              properties:
+                cronExpression: { type: string, description: 5-field cron, validated on write }
+                timezone: { type: string, description: Mandatory IANA zone id }
+                enabled: { type: boolean, default: true }
+                runtimeProfile: { type: string, nullable: true }
+                failurePolicy:
+                  type: string
+                  enum: [STOP_ON_ERROR, CONTINUE_ON_ERROR]
+                  default: STOP_ON_ERROR
+                overlapPolicy:
+                  type: string
+                  enum: [SKIP_IF_RUNNING, QUEUE]
+                  default: SKIP_IF_RUNNING
+                version: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The stored schedule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotebookSchedule" }
+        "400": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Notebook]
+      summary: Remove the schedule
+      responses:
+        "204": { description: Deleted }
+
+  /me:
+    get:
+      tags: [Notebook]
+      summary: The authenticated identity and its capabilities; never returns a token
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { type: string }
+                  admin: { type: boolean }
+                  permissions:
+                    type: object
+                    properties:
+                      manageNotebooks: { type: boolean }
+                      manageRuntimes: { type: boolean }
+                      managePythonEnvironments: { type: boolean }
+
+  /notebook-status:
+    get:
+      tags: [Notebook]
+      summary: Sanitized subsystem health
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notebookService: { type: string }
+                  persistence: { type: string }
+                  kyuubiSql:
+                    type: string
+                    description: NOT_IMPLEMENTED until the SQL runtime adapter ships.
+                  pythonRuntimeManager:
+                    type: string
+                    description: NOT_IMPLEMENTED until the CPython runtime manager ships.
+                  activeSessions: { type: integer }
+                  activeRuntimes: { type: integer }
+                  queuedExecutions: { type: integer }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: An error envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code; see API.md for the full list.
+            message:
+              type: string
+              description: Safe for display; never contains a stack trace, secret or path.
+            requestId: { type: string }
+            retryable: { type: boolean }
+            details: { type: object, additionalProperties: { type: string } }
+
+    NotebookFolder:
+      type: object
+      properties:
+        id: { type: string }
+        parentId: { type: string, nullable: true }
+        name: { type: string }
+        path:
+          type: string
+          description: Derived as /<owner>/<ancestors>/<name>; never client-supplied.
+        owner: { type: string }
+        createdAt: { type: integer, format: int64 }
+        createdBy: { type: string }
+        updatedAt: { type: integer, format: int64 }
+        updatedBy: { type: string }
+        version: { type: integer, format: int64 }
+
+    Notebook:
+      type: object
+      properties:
+        id: { type: string }
+        folderId: { type: string, nullable: true }
+        path: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        owner: { type: string }
+        defaultCatalog: { type: string, nullable: true }
+        defaultSchema: { type: string, nullable: true }
+        runtimeProfile: { type: string, nullable: true }
+        formatVersion: { type: integer }
+        createdAt: { type: integer, format: int64 }
+        createdBy: { type: string }
+        updatedAt: { type: integer, format: int64 }
+        updatedBy: { type: string }
+        version: { type: integer, format: int64 }
+        role:
+          type: string
+          enum: [OWNER, EDITOR, VIEWER]
+          nullable: true
+          description: The calling principal's effective role.
+        cells:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/NotebookCell" }
+
+    NotebookCell:
+      type: object
+      properties:
+        id: { type: string }
+        notebookId: { type: string }
+        position: { type: integer }
+        cellType: { type: string, enum: [CODE, MARKDOWN] }
+        language: { type: string, enum: [SQL, PYTHON, MARKDOWN] }
+        source: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        configuration: { type: object, additionalProperties: { type: string } }
+        createdAt: { type: integer, format: int64 }
+        updatedAt: { type: integer, format: int64 }
+        version: { type: integer, format: int64 }
+
+    NotebookRevision:
+      type: object
+      properties:
+        revisionNumber: { type: integer, format: int64 }
+        notebookId: { type: string }
+        createdAt: { type: integer, format: int64 }
+        createdBy: { type: string }
+        reason: { type: string, nullable: true }
+        protectedRevision:
+          type: boolean
+          description: Protected revisions are never trimmed and cannot be deleted.
+        document:
+          type: object
+          nullable: true
+          description: Present only when fetching a single revision.
+
+    NotebookPermission:
+      type: object
+      properties:
+        principalType: { type: string, enum: [USER] }
+        principalId: { type: string }
+        role: { type: string, enum: [OWNER, EDITOR, VIEWER] }
+        createdAt: { type: integer, format: int64 }
+        createdBy: { type: string }
+
+    NotebookSchedule:
+      type: object
+      properties:
+        notebookId: { type: string }
+        cronExpression: { type: string }
+        timezone: { type: string }
+        enabled: { type: boolean }
+        runtimeProfile: { type: string, nullable: true }
+        failurePolicy: { type: string, enum: [STOP_ON_ERROR, CONTINUE_ON_ERROR] }
+        overlapPolicy: { type: string, enum: [SKIP_IF_RUNNING, QUEUE] }
+        lastRunAt: { type: integer, format: int64, nullable: true }
+        nextRunAt: { type: integer, format: int64, nullable: true }
+        createdAt: { type: integer, format: int64 }
+        createdBy: { type: string }
+        updatedAt: { type: integer, format: int64 }
+        updatedBy: { type: string }
+        version: { type: integer, format: int64 }
+
+    NotebookPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Notebook" }
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque; pass back verbatim. Do not parse.
+        hasMore: { type: boolean }
+
+    CreateFolderRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        parentId: { type: string, nullable: true }
+
+    UpdateFolderRequest:
+      type: object
+      properties:
+        name: { type: string }
+        parentId:
+          type: string
+          nullable: true
+          description: Empty string moves the folder to the caller's root.
+        version: { type: integer, format: int64 }
+
+    CreateNotebookRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        folderId: { type: string, nullable: true }
+        description: { type: string }
+        defaultCatalog: { type: string }
+        defaultSchema: { type: string }
+        runtimeProfile: { type: string }
+        cells:
+          type: array
+          items: { $ref: "#/components/schemas/CreateCellRequest" }
+
+    UpdateNotebookRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        defaultCatalog: { type: string }
+        defaultSchema: { type: string }
+        runtimeProfile: { type: string }
+        version: { type: integer, format: int64 }
+
+    CreateCellRequest:
+      type: object
+      properties:
+        cellType: { type: string, enum: [CODE, MARKDOWN], default: CODE }
+        language: { type: string, enum: [SQL, PYTHON, MARKDOWN] }
+        source: { type: string }
+        position: { type: integer, description: Defaults to the end of the notebook. }
+        metadata: { type: object, additionalProperties: { type: string } }
+        configuration: { type: object, additionalProperties: { type: string } }
+
+    UpdateCellRequest:
+      type: object
+      properties:
+        cellType: { type: string, enum: [CODE, MARKDOWN] }
+        language: { type: string, enum: [SQL, PYTHON, MARKDOWN] }
+        source: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        configuration: { type: object, additionalProperties: { type: string } }
+        version: { type: integer, format: int64 }

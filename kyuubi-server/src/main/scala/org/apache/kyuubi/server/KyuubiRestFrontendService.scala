@@ -36,6 +36,8 @@ import org.apache.kyuubi.metrics.MetricsConstants.OPERATION_BATCH_PENDING_MAX_EL
 import org.apache.kyuubi.operation.OperationState
 import org.apache.kyuubi.server.api.v1.ApiRootResource
 import org.apache.kyuubi.server.http.authentication.{AuthenticationFilter, KyuubiHttpAuthenticationFactory}
+import org.apache.kyuubi.server.notebook.NotebookConf.NOTEBOOK_ENABLED
+import org.apache.kyuubi.server.notebook.NotebookManager
 import org.apache.kyuubi.server.ui.{JettyServer, JettyUtils}
 import org.apache.kyuubi.service.{AbstractFrontendService, Serverable, Service, ServiceUtils}
 import org.apache.kyuubi.service.authentication.{AuthTypes, AuthUtils}
@@ -63,6 +65,13 @@ class KyuubiRestFrontendService(override val serverable: Serverable)
   private[kyuubi] lazy val batchService: Option[KyuubiBatchService] =
     if (conf.get(BATCH_SUBMITTER_ENABLED)) {
       Some(new KyuubiBatchService(this, sessionManager))
+    } else {
+      None
+    }
+
+  private[kyuubi] lazy val notebookManager: Option[NotebookManager] =
+    if (conf.get(NOTEBOOK_ENABLED)) {
+      Some(new NotebookManager(() => be, () => connectionUrl))
     } else {
       None
     }
@@ -103,6 +112,7 @@ class KyuubiRestFrontendService(override val serverable: Serverable)
       conf.get(FRONTEND_REST_JETTY_STOP_TIMEOUT),
       conf.get(FRONTEND_JETTY_SEND_VERSION_ENABLED))
     batchService.foreach(addService)
+    notebookManager.foreach(addService)
     super.initialize(conf)
   }
 

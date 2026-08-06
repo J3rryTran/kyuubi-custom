@@ -26,6 +26,7 @@ import org.apache.kyuubi.ctl.CtlConf
 import org.apache.kyuubi.ha.HighAvailabilityConf
 import org.apache.kyuubi.metrics.MetricsConf
 import org.apache.kyuubi.server.metadata.jdbc.JDBCMetadataStoreConf
+import org.apache.kyuubi.server.notebook.NotebookConf
 import org.apache.kyuubi.util.GoldenFileUtils._
 import org.apache.kyuubi.util.JavaUtils
 import org.apache.kyuubi.zookeeper.ZookeeperConf
@@ -56,6 +57,7 @@ class AllKyuubiConfiguration extends KyuubiFunSuite {
     HighAvailabilityConf,
     JDBCMetadataStoreConf,
     MetricsConf,
+    NotebookConf,
     ZookeeperConf)
 
   test("Check all kyuubi configs") {
