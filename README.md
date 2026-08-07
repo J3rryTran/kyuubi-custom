@@ -3,6 +3,10 @@ fork from https://github.com/apache/kyuubi.git
 
 version 1.10.3
 
+env:
+  - jdk: 17
+  - hadoop: 3.3.4
+
 ## Build and publish
 
 Run the following steps from the project root.
